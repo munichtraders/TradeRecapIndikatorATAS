@@ -144,7 +144,7 @@ public class TradeRecapIndicator : Indicator
     // Zeitstempel des Indikator-Starts — historische Trades davor werden nicht verschickt
     private DateTime _initTime;
 
-    private const string CurrentVersion = "260627";
+    private const string CurrentVersion = "260628";
 
     // 0 = unbekannt, 1 = verbunden, 2 = Fehler
     private volatile int _tgStatus;
