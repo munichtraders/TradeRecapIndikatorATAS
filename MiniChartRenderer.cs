@@ -83,9 +83,12 @@ public static class MiniChartRenderer
         }
 
         // ── Trade-Zone Highlight ──────────────────────────────────────────
-        // Letzter Bar dessen Eröffnungszeit ≤ Trade-Zeit
-        int entryIdx = FindBarIndex(candles, record.OpenTime);
-        int exitIdx  = FindBarIndex(candles, record.CloseTime);
+        // Candle-Zeiten sind Lokalzeit (UTC→Local in BuildMiniChart).
+        // trade.Time aus ATAS hat Kind=Unspecified, Wert=UTC → ebenfalls konvertieren.
+        DateTime entryLocal = DateTime.SpecifyKind(record.OpenTime,  DateTimeKind.Utc).ToLocalTime();
+        DateTime exitLocal  = DateTime.SpecifyKind(record.CloseTime, DateTimeKind.Utc).ToLocalTime();
+        int entryIdx = FindBarIndex(candles, entryLocal);
+        int exitIdx  = FindBarIndex(candles, exitLocal);
         if (entryIdx >= 0 && exitIdx >= entryIdx)
         {
             float zx = BarX(entryIdx) - candleAreaW / 2f;
