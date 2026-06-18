@@ -150,7 +150,7 @@ public static class MiniChartRenderer
         float timeY = PadT + ChartH + 5f;
         foreach (int ti in new[] { 0, n / 4, n / 2, 3 * n / 4, n - 1 }.Distinct())
         {
-            string ts = candles[ti].Time.ToString("HH:mm");
+            string ts = candles[ti].Time.ToLocalTime().ToString("HH:mm");
             g.DrawString(ts, timeFont, timeBrush, BarX(ti) - 13f, timeY);
         }
 
