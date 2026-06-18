@@ -141,7 +141,7 @@ public class TradeRecapIndicator : Indicator
     // Geschlossene PnL aus ATAS-Account (wird via OnPortfolioChanged aktualisiert)
     private decimal _accountClosedPnl = 0m;
 
-    private const string CurrentVersion = "260623";
+    private const string CurrentVersion = "260624";
 
     // 0 = unbekannt, 1 = verbunden, 2 = Fehler
     private volatile int _tgStatus;
@@ -433,51 +433,19 @@ public class TradeRecapIndicator : Indicator
     // ── Hilfsmethoden ─────────────────────────────────────────────────────
 
     /// <summary>
-    /// Liest die letzten N Bars via GetCandle() und rendert daraus einen
-    /// gebrandeten Mini-Candlestick-Chart mit Entry/Exit-Markierungen.
+    /// Liest die letzten 50 Kerzen zum Zeitpunkt des Trade-Close.
     /// </summary>
     private byte[]? BuildMiniChart(PositionRecord record)
     {
-        // ATAS-Indexierung: GetCandle(0) = ältester Bar, GetCandle(CurrentBar) = neuester Bar
-        // Höherer Index = jüngere Kerze
-        const int PreEntryBars  = 20;
-        const int PostExitBars  = 5;
+        const int CandleCount = 50;
 
-        int totalBars = CurrentBar;
-        if (totalBars < 2) return null;
+        int newest = CurrentBar;
+        if (newest < 2) return null;
 
-        // GetCandle(i).Time liefert ATAS bereits als Lokalzeit (DateTimeKind.Unspecified).
-        // record.OpenTime/CloseTime sind ebenfalls Lokalzeit → direkter Vergleich ohne Konvertierung.
+        int firstBar = Math.Max(0, newest - CandleCount + 1);
 
-        // Entry-Bar: von neu nach alt (von totalBars→0), erster Bar dessen Zeit <= OpenTime
-        int entryBar = 0;
-        for (int i = totalBars; i >= 0; i--)
-        {
-            try
-            {
-                if (GetCandle(i).Time <= record.OpenTime) { entryBar = i; break; }
-            }
-            catch { break; }
-        }
-
-        // Exit-Bar: von entryBar vorwärts (höhere Indizes = neuere Bars)
-        int exitBar = entryBar;
-        for (int i = entryBar; i <= totalBars; i++)
-        {
-            try
-            {
-                if (GetCandle(i).Time >= record.CloseTime) { exitBar = i; break; }
-            }
-            catch { break; }
-        }
-
-        // Fenster: PreEntryBars ältere Kerzen (niedrigere Indizes) bis PostExitBars neuere
-        int firstBar = Math.Max(0,          entryBar - PreEntryBars);
-        int lastBar  = Math.Min(totalBars,  exitBar  + PostExitBars);
-
-        // Kerzen von alt→neu einlesen, Zeit als Lokalzeit für korrekte Chart-Anzeige
-        var candles = new List<CandleData>(lastBar - firstBar + 1);
-        for (int i = firstBar; i <= lastBar; i++)
+        var candles = new List<CandleData>(newest - firstBar + 1);
+        for (int i = firstBar; i <= newest; i++)
         {
             try
             {
