@@ -141,7 +141,7 @@ public class TradeRecapIndicator : Indicator
     // Geschlossene PnL aus ATAS-Account (wird via OnPortfolioChanged aktualisiert)
     private decimal _accountClosedPnl = 0m;
 
-    private const string CurrentVersion = "260618";
+    private const string CurrentVersion = "260619";
 
     // 0 = unbekannt, 1 = verbunden, 2 = Fehler
     private volatile int _tgStatus;
@@ -482,7 +482,7 @@ public class TradeRecapIndicator : Indicator
             try
             {
                 var c = GetCandle(i);
-                candles.Add(new CandleData(c.Open, c.High, c.Low, c.Close, c.Volume, c.Time));
+                candles.Add(new CandleData(c.Open, c.High, c.Low, c.Close, c.Volume, c.Time.ToLocalTime()));
             }
             catch (Exception ex)
             {
