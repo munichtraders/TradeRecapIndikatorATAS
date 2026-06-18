@@ -141,7 +141,7 @@ public class TradeRecapIndicator : Indicator
     // Geschlossene PnL aus ATAS-Account (wird via OnPortfolioChanged aktualisiert)
     private decimal _accountClosedPnl = 0m;
 
-    private const string CurrentVersion = "260625";
+    private const string CurrentVersion = "260626";
 
     // 0 = unbekannt, 1 = verbunden, 2 = Fehler
     private volatile int _tgStatus;
@@ -450,8 +450,8 @@ public class TradeRecapIndicator : Indicator
             try
             {
                 var c         = GetCandle(i);
-                // ATAS liefert Time als Unspecified — explizit als Local markieren
-                var localTime = DateTime.SpecifyKind(c.Time, DateTimeKind.Local);
+                // ATAS liefert Time als Unspecified mit UTC-Wert — erst als UTC markieren, dann konvertieren
+                var localTime = DateTime.SpecifyKind(c.Time, DateTimeKind.Utc).ToLocalTime();
                 candles.Add(new CandleData(c.Open, c.High, c.Low, c.Close, c.Volume, localTime));
             }
             catch (Exception ex)
