@@ -141,7 +141,7 @@ public class TradeRecapIndicator : Indicator
     // Geschlossene PnL aus ATAS-Account (wird via OnPortfolioChanged aktualisiert)
     private decimal _accountClosedPnl = 0m;
 
-    private const string CurrentVersion = "260622";
+    private const string CurrentVersion = "260623";
 
     // 0 = unbekannt, 1 = verbunden, 2 = Fehler
     private volatile int _tgStatus;
@@ -446,22 +446,16 @@ public class TradeRecapIndicator : Indicator
         int totalBars = CurrentBar;
         if (totalBars < 2) return null;
 
-        // record.OpenTime/CloseTime: DateTimeKind.Unspecified, Wert = Lokalzeit
-        // GetCandle(i).Time: UTC — wir normalisieren beide auf UTC
-        static DateTime ToUtc(DateTime dt) => dt.Kind == DateTimeKind.Utc
-            ? dt
-            : DateTime.SpecifyKind(dt, DateTimeKind.Local).ToUniversalTime();
+        // GetCandle(i).Time liefert ATAS bereits als Lokalzeit (DateTimeKind.Unspecified).
+        // record.OpenTime/CloseTime sind ebenfalls Lokalzeit → direkter Vergleich ohne Konvertierung.
 
-        DateTime openUtc  = ToUtc(record.OpenTime);
-        DateTime closeUtc = ToUtc(record.CloseTime);
-
-        // Entry-Bar: von neu nach alt (von totalBars→0), erster Bar dessen Zeit <= openUtc
+        // Entry-Bar: von neu nach alt (von totalBars→0), erster Bar dessen Zeit <= OpenTime
         int entryBar = 0;
         for (int i = totalBars; i >= 0; i--)
         {
             try
             {
-                if (GetCandle(i).Time <= openUtc) { entryBar = i; break; }
+                if (GetCandle(i).Time <= record.OpenTime) { entryBar = i; break; }
             }
             catch { break; }
         }
@@ -472,7 +466,7 @@ public class TradeRecapIndicator : Indicator
         {
             try
             {
-                if (GetCandle(i).Time >= closeUtc) { exitBar = i; break; }
+                if (GetCandle(i).Time >= record.CloseTime) { exitBar = i; break; }
             }
             catch { break; }
         }
@@ -488,7 +482,7 @@ public class TradeRecapIndicator : Indicator
             try
             {
                 var c = GetCandle(i);
-                candles.Add(new CandleData(c.Open, c.High, c.Low, c.Close, c.Volume, c.Time.ToLocalTime()));
+                candles.Add(new CandleData(c.Open, c.High, c.Low, c.Close, c.Volume, c.Time));
             }
             catch (Exception ex)
             {
