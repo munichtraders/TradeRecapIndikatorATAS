@@ -141,7 +141,10 @@ public class TradeRecapIndicator : Indicator
     // Geschlossene PnL aus ATAS-Account (wird via OnPortfolioChanged aktualisiert)
     private decimal _accountClosedPnl = 0m;
 
-    private const string CurrentVersion = "260626";
+    // Zeitstempel des Indikator-Starts — historische Trades davor werden nicht verschickt
+    private DateTime _initTime;
+
+    private const string CurrentVersion = "260627";
 
     // 0 = unbekannt, 1 = verbunden, 2 = Fehler
     private volatile int _tgStatus;
@@ -176,7 +179,8 @@ public class TradeRecapIndicator : Indicator
 
     protected override void OnInitialize()
     {
-        _dailyStats = new DailyStats();
+        _initTime    = DateTime.UtcNow;
+        _dailyStats  = new DailyStats();
         _positionTracker = new PositionTracker(_dailyStats);
         _positionTracker.PositionClosed += OnPositionClosed;
 
@@ -246,6 +250,9 @@ public class TradeRecapIndicator : Indicator
 
     private void OnPositionClosed(PositionRecord record)
     {
+        // Historische Trades beim Chart-Reload ignorieren
+        if (DateTime.SpecifyKind(record.CloseTime, DateTimeKind.Utc) < _initTime) return;
+
         // Tick-Daten: primär aus dem Trade-Fill (Security), Fallback statische Tabelle
         decimal tickSize = record.TickSize > 0 ? record.TickSize : GetTickSizeFallback(record.Symbol);
         decimal tickCost = record.TickCost > 0 ? record.TickCost : GetTickCostFallback(record.Symbol);
