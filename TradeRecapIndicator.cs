@@ -144,7 +144,7 @@ public class TradeRecapIndicator : Indicator
     // Zeitstempel des Indikator-Starts — historische Trades davor werden nicht verschickt
     private DateTime _initTime;
 
-    private const string CurrentVersion = "260628";
+    private const string CurrentVersion = "260629";
 
     // 0 = unbekannt, 1 = verbunden, 2 = Fehler
     private volatile int _tgStatus;
@@ -439,17 +439,33 @@ public class TradeRecapIndicator : Indicator
 
     // ── Hilfsmethoden ─────────────────────────────────────────────────────
 
-    /// <summary>
-    /// Liest die letzten 50 Kerzen zum Zeitpunkt des Trade-Close.
-    /// </summary>
     private byte[]? BuildMiniChart(PositionRecord record)
     {
-        const int CandleCount = 50;
+        const int MinCandleCount   = 100;  // Mindestanzahl sichtbarer Kerzen
+        const int MinCandlesBefore = 30;   // Mindestvorlauf vor der Entry-Kerze
 
         int newest = CurrentBar;
         if (newest < 2) return null;
 
-        int firstBar = Math.Max(0, newest - CandleCount + 1);
+        // Entry-Bar rückwärts suchen (gleiche Zeitlogik wie MiniChartRenderer)
+        DateTime entryLocal = DateTime.SpecifyKind(record.OpenTime, DateTimeKind.Utc).ToLocalTime();
+        int entryBarIdx = -1;
+        for (int i = newest; i >= Math.Max(0, newest - 500); i--)
+        {
+            try
+            {
+                var barTime = DateTime.SpecifyKind(GetCandle(i).Time, DateTimeKind.Utc).ToLocalTime();
+                if (barTime <= entryLocal) { entryBarIdx = i; break; }
+            }
+            catch { break; }
+        }
+
+        // Basis-Fenster: 100 Kerzen ab aktuellem Bar
+        int firstBar = Math.Max(0, newest - MinCandleCount + 1);
+
+        // Fenster nach hinten erweitern wenn Entry-Vorlauf < 30 Kerzen
+        if (entryBarIdx >= 0 && entryBarIdx - firstBar < MinCandlesBefore)
+            firstBar = Math.Max(0, entryBarIdx - MinCandlesBefore);
 
         var candles = new List<CandleData>(newest - firstBar + 1);
         for (int i = firstBar; i <= newest; i++)
