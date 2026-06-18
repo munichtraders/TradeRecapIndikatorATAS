@@ -141,7 +141,7 @@ public class TradeRecapIndicator : Indicator
     // Geschlossene PnL aus ATAS-Account (wird via OnPortfolioChanged aktualisiert)
     private decimal _accountClosedPnl = 0m;
 
-    private const string CurrentVersion = "260619";
+    private const string CurrentVersion = "260620";
 
     // 0 = unbekannt, 1 = verbunden, 2 = Fehler
     private volatile int _tgStatus;
