@@ -4,6 +4,7 @@ on:
   push:
     tags:
       - 'v*'
+      - 'beta-*'
 
 jobs:
   release:
@@ -15,9 +16,19 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Versionsnummer aus Tag extrahieren
+      - name: Versionsnummer und Typ ermitteln
         id: version
-        run: echo "version=${GITHUB_REF_NAME#v}" >> $GITHUB_OUTPUT
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          if [[ "$TAG" == beta-* ]]; then
+            echo "version=${TAG#beta-}" >> $GITHUB_OUTPUT
+            echo "is_beta=true" >> $GITHUB_OUTPUT
+            echo "label=Beta" >> $GITHUB_OUTPUT
+          else
+            echo "version=${TAG#v}" >> $GITHUB_OUTPUT
+            echo "is_beta=false" >> $GITHUB_OUTPUT
+            echo "label=Trade Recap" >> $GITHUB_OUTPUT
+          fi
 
       - name: DLL vorhanden?
         run: |
@@ -29,8 +40,8 @@ jobs:
       - name: GitHub Release erstellen
         uses: softprops/action-gh-release@v2
         with:
-          name: "v${{ steps.version.outputs.version }} — Trade Recap"
+          name: "v${{ steps.version.outputs.version }} — ${{ steps.version.outputs.label }}"
           body_path: CHANGELOG.md
           files: MunichTraders.TradeRecap.dll
           draft: false
-          prerelease: false
+          prerelease: ${{ steps.version.outputs.is_beta }}

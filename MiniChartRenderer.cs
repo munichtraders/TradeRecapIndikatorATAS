@@ -83,9 +83,12 @@ public static class MiniChartRenderer
         }
 
         // ── Trade-Zone Highlight ──────────────────────────────────────────
-        // Letzter Bar dessen Eröffnungszeit ≤ Trade-Zeit
-        int entryIdx = FindBarIndex(candles, record.OpenTime);
-        int exitIdx  = FindBarIndex(candles, record.CloseTime);
+        // Candle-Zeiten sind Lokalzeit (UTC→Local in BuildMiniChart).
+        // trade.Time aus ATAS hat Kind=Unspecified, Wert=UTC → ebenfalls konvertieren.
+        DateTime entryLocal = DateTime.SpecifyKind(record.OpenTime,  DateTimeKind.Utc).ToLocalTime();
+        DateTime exitLocal  = DateTime.SpecifyKind(record.CloseTime, DateTimeKind.Utc).ToLocalTime();
+        int entryIdx = FindBarIndex(candles, entryLocal);
+        int exitIdx  = FindBarIndex(candles, exitLocal);
         if (entryIdx >= 0 && exitIdx >= entryIdx)
         {
             float zx = BarX(entryIdx) - candleAreaW / 2f;
@@ -130,19 +133,14 @@ public static class MiniChartRenderer
             exitX1, exitX2, exitLineGray, exitCol,
             "EXIT", $"{record.AvgExitPrice:F2}");
 
-        // ── Entry / Exit Marker-Pfeile (embedded PNG) ────────────────────
-        using var imgUp   = LoadEmbeddedPng("arrow_up_green.png");
-        using var imgDown = LoadEmbeddedPng("arrow_down_red.png");
-
+        // ── Entry / Exit Marker-Pfeile (GDI+-Vektoren, keine externen Dateien) ──
         bool entryIsLong = record.Direction == PositionDirection.Long;
-        if (entryIdx >= 0 && imgUp != null && imgDown != null)
-            DrawPngMarker(g, entryIsLong ? imgUp : imgDown,
-                          BarX(entryIdx), PriceToY(record.AvgEntryPrice),
-                          candleAreaW, pointUp: entryIsLong);
-        if (exitIdx >= 0 && imgUp != null && imgDown != null)
-            DrawPngMarker(g, entryIsLong ? imgDown : imgUp,
-                          BarX(exitIdx), PriceToY(record.AvgExitPrice),
-                          candleAreaW, pointUp: !entryIsLong);
+        if (entryIdx >= 0)
+            DrawArrowMarker(g, BarX(entryIdx), PriceToY(record.AvgEntryPrice),
+                            pointUp: entryIsLong);
+        if (exitIdx >= 0)
+            DrawArrowMarker(g, BarX(exitIdx), PriceToY(record.AvgExitPrice),
+                            pointUp: !entryIsLong);
 
         // ── Zeit-Labels (5 gleichmäßige Punkte) ──────────────────────────
         using var timeFont  = new Font("Calibri", 12f);
@@ -215,26 +213,57 @@ public static class MiniChartRenderer
         g.DrawString(price, font, brush, PadL + ChartW + 4, y -  2f);
     }
 
-    private static Image? LoadEmbeddedPng(string filename)
+    // Pfeil als GDI+-Vektor zeichnen — keine externen Dateien nötig.
+    // pointUp=true → grüner ↑ (Long-Entry / Short-Exit), Spitze liegt auf y
+    // pointUp=false → roter ↓ (Short-Entry / Long-Exit), Spitze liegt auf y
+    private static void DrawArrowMarker(Graphics g, float x, float y, bool pointUp)
     {
-        var asm = System.Reflection.Assembly.GetExecutingAssembly();
-        string name = $"MunichTraders.TradeRecap.{filename}";
-        var stream = asm.GetManifestResourceStream(name);
-        return stream == null ? null : Image.FromStream(stream);
-    }
+        const float size   = 44f;  // Gesamthöhe in Pixel, fix unabhängig vom Zoom
+        const float headH  = size * 0.55f;
+        const float shaftW = size * 0.38f;
 
-    // Pfeil-PNG an Entry/Exit-Bar zeichnen; Spitze zeigt zur Kerze
-    private static void DrawPngMarker(Graphics g, Image img, float x, float y,
-                                      float candleAreaW, bool pointUp)
-    {
-        float arrowW = candleAreaW * 2.2f;
-        float arrowH = arrowW * ((float)img.Height / img.Width);
+        Color col = pointUp
+            ? Color.FromArgb(255, 52, 199, 89)   // grün  ↑
+            : Color.FromArgb(255, 220, 50,  50);  // rot   ↓
 
-        float drawX = x - arrowW / 2f;
-        float drawY = pointUp
-            ? y               // Pfeil ↑: Spitze (Bitmap-Top) liegt auf y
-            : y - arrowH;     // Pfeil ↓: Spitze (Bitmap-Bottom) liegt auf y
+        using var path  = new GraphicsPath();
+        using var brush = new SolidBrush(col);
 
-        g.DrawImage(img, drawX, drawY, arrowW, arrowH);
+        if (pointUp)
+        {
+            // Spitze oben bei y, Schaft hängt nach unten
+            float tipY      = y;
+            float headBase  = y + headH;
+            float bottom    = y + size;
+            path.AddPolygon(new PointF[]
+            {
+                new(x,              tipY),
+                new(x + size / 2f,  headBase),
+                new(x + shaftW / 2f, headBase),
+                new(x + shaftW / 2f, bottom),
+                new(x - shaftW / 2f, bottom),
+                new(x - shaftW / 2f, headBase),
+                new(x - size / 2f,  headBase),
+            });
+        }
+        else
+        {
+            // Spitze unten bei y, Schaft zeigt nach oben
+            float tipY      = y;
+            float headBase  = y - headH;
+            float top       = y - size;
+            path.AddPolygon(new PointF[]
+            {
+                new(x,              tipY),
+                new(x + size / 2f,  headBase),
+                new(x + shaftW / 2f, headBase),
+                new(x + shaftW / 2f, top),
+                new(x - shaftW / 2f, top),
+                new(x - shaftW / 2f, headBase),
+                new(x - size / 2f,  headBase),
+            });
+        }
+
+        g.FillPath(brush, path);
     }
 }
