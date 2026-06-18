@@ -1,0 +1,36 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Versionsnummer aus Tag extrahieren
+        id: version
+        run: echo "version=${GITHUB_REF_NAME#v}" >> $GITHUB_OUTPUT
+
+      - name: DLL vorhanden?
+        run: |
+          if [ ! -f "MunichTraders.TradeRecap.dll" ]; then
+            echo "❌ MunichTraders.TradeRecap.dll nicht gefunden — vor dem Tag-Push committen!"
+            exit 1
+          fi
+
+      - name: GitHub Release erstellen
+        uses: softprops/action-gh-release@v2
+        with:
+          name: "v${{ steps.version.outputs.version }} — Trade Recap"
+          body_path: CHANGELOG.md
+          files: MunichTraders.TradeRecap.dll
+          draft: false
+          prerelease: false

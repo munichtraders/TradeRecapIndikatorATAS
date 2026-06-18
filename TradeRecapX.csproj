@@ -1,0 +1,48 @@
+<!--
+  ATAS X (cross-platform: Windows + macOS)
+  Build: dotnet build TradeRecapX.csproj
+  Output: bin\Debug\net8.0\MunichTraders.TradeRecapX.dll
+-->
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <AssemblyName>MunichTraders.TradeRecapX</AssemblyName>
+    <RootNamespace>MunichTraders.TradeRecap</RootNamespace>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <DefineConstants>ATASX</DefineConstants>
+  </PropertyGroup>
+
+  <!-- GDI+-Datei ausschließen -->
+  <ItemGroup>
+    <Compile Remove="CardRenderer.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- [2.88.8,3.0) = exakt 2.88.x — verhindert Auto-Upgrade auf SkiaSharp 3.x (Breaking API) -->
+    <PackageReference Include="SkiaSharp" Version="[2.88.8,3.0)" />
+    <PackageReference Include="SkiaSharp.NativeAssets.Win32" Version="[2.88.8,3.0)" Condition="'$(OS)'=='Windows_NT'" />
+    <PackageReference Include="SkiaSharp.NativeAssets.macOS" Version="[2.88.8,3.0)" Condition="'$(OS)'!='Windows_NT'" />
+  </ItemGroup>
+
+  <!-- ATASXPath aus Directory.Build.props / Local.props -->
+  <ItemGroup>
+    <Reference Include="ATAS.Indicators">
+      <HintPath>$(ATASXPath)\ATAS.Indicators.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="ATAS.DataFeedsCore">
+      <HintPath>$(ATASXPath)\ATAS.DataFeedsCore.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="OFT.Rendering">
+      <HintPath>$(ATASXPath)\OFT.Rendering.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="Utils.Common">
+      <HintPath>$(ATASXPath)\Utils.Common.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+  </ItemGroup>
+
+</Project>

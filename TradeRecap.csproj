@@ -1,0 +1,46 @@
+<!--
+  Classic ATAS (Windows only)
+  Build: dotnet build TradeRecap.csproj
+  Output: bin\Debug\net8.0-windows\MunichTraders.TradeRecap.dll
+-->
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <AssemblyName>MunichTraders.TradeRecap</AssemblyName>
+    <RootNamespace>MunichTraders.TradeRecap</RootNamespace>
+  </PropertyGroup>
+
+  <!-- ATAS X-Dateien ausschließen -->
+  <ItemGroup>
+    <Compile Remove="CardRendererSkia.cs" />
+    <Compile Remove="ScreenshotHelper.cs" />
+  </ItemGroup>
+
+
+  <ItemGroup>
+    <EmbeddedResource Include="arrow_up_green.png" />
+    <EmbeddedResource Include="arrow_down_red.png" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Reference Include="ATAS.Indicators">
+      <HintPath>$(ATASPath)\ATAS.Indicators.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="ATAS.DataFeedsCore">
+      <HintPath>$(ATASPath)\ATAS.DataFeedsCore.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="OFT.Rendering">
+      <HintPath>$(ATASPath)\OFT.Rendering.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="Utils.Common">
+      <HintPath>$(ATASPath)\Utils.Common.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+  </ItemGroup>
+
+</Project>
