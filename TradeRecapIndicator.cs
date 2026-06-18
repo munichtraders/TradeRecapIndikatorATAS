@@ -453,7 +453,7 @@ public class TradeRecapIndicator : Indicator
         {
             try
             {
-                if (GetCandle(i).Time <= record.OpenTime) { entryBar = i; break; }
+                if (GetCandle(i).Time.ToLocalTime() <= record.OpenTime) { entryBar = i; break; }
             }
             catch { break; }
         }
@@ -465,7 +465,7 @@ public class TradeRecapIndicator : Indicator
         {
             try
             {
-                if (GetCandle(i).Time >= record.CloseTime) { exitBar = i; break; }
+                if (GetCandle(i).Time.ToLocalTime() >= record.CloseTime) { exitBar = i; break; }
             }
             catch { break; }
         }
