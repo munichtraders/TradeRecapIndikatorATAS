@@ -4,6 +4,13 @@ Alle Änderungen werden hier dokumentiert. Format: `YYMMDD`.
 
 ---
 
+## [260629] — 2026-06-18
+
+### Geändert
+- **MiniChart Kerzen-Fenster:** Minimum ist 100 Kerzen. Zusätzlich wird sichergestellt, dass vor der Entry-Kerze mindestens 30 Kerzen sichtbar sind — bei langen Trades wird das Fenster entsprechend nach hinten erweitert.
+
+---
+
 ## [260628] — 2026-06-18
 
 ### Neu
