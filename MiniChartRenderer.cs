@@ -138,11 +138,11 @@ public static class MiniChartRenderer
         if (entryIdx >= 0 && imgUp != null && imgDown != null)
             DrawPngMarker(g, entryIsLong ? imgUp : imgDown,
                           BarX(entryIdx), PriceToY(record.AvgEntryPrice),
-                          candleAreaW, pointUp: entryIsLong);
+                          pointUp: entryIsLong);
         if (exitIdx >= 0 && imgUp != null && imgDown != null)
             DrawPngMarker(g, entryIsLong ? imgDown : imgUp,
                           BarX(exitIdx), PriceToY(record.AvgExitPrice),
-                          candleAreaW, pointUp: !entryIsLong);
+                          pointUp: !entryIsLong);
 
         // ── Zeit-Labels (5 gleichmäßige Punkte) ──────────────────────────
         using var timeFont  = new Font("Calibri", 12f);
@@ -223,12 +223,14 @@ public static class MiniChartRenderer
         return stream == null ? null : Image.FromStream(stream);
     }
 
+    // Feste Pixelgröße: unabhängig von der Anzahl der Kerzen im Chart
+    private const float ArrowPx = 44f;
+
     // Pfeil-PNG an Entry/Exit-Bar zeichnen; Spitze zeigt zur Kerze
-    private static void DrawPngMarker(Graphics g, Image img, float x, float y,
-                                      float candleAreaW, bool pointUp)
+    private static void DrawPngMarker(Graphics g, Image img, float x, float y, bool pointUp)
     {
-        float arrowW = candleAreaW * 2.2f;
-        float arrowH = arrowW * ((float)img.Height / img.Width);
+        const float arrowW = ArrowPx;
+        const float arrowH = ArrowPx; // PNGs sind 200×200 (quadratisch)
 
         float drawX = x - arrowW / 2f;
         float drawY = pointUp

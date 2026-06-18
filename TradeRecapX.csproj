@@ -19,6 +19,11 @@
   </ItemGroup>
 
   <ItemGroup>
+    <EmbeddedResource Include="arrow_up_green.png" />
+    <EmbeddedResource Include="arrow_down_red.png" />
+  </ItemGroup>
+
+  <ItemGroup>
     <!-- [2.88.8,3.0) = exakt 2.88.x — verhindert Auto-Upgrade auf SkiaSharp 3.x (Breaking API) -->
     <PackageReference Include="SkiaSharp" Version="[2.88.8,3.0)" />
     <PackageReference Include="SkiaSharp.NativeAssets.Win32" Version="[2.88.8,3.0)" Condition="'$(OS)'=='Windows_NT'" />
