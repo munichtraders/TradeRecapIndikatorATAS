@@ -40,7 +40,8 @@ public static class CardRenderer
         byte[]? logoBytes,
         byte[]? chartBytes,
         decimal dailyDrawdownLimit,
-        decimal accountBalance)
+        decimal accountBalance,
+        string traderName = "")
     {
         using var surface = SKSurface.Create(
             new SKImageInfo(CardW, CardH, SKColorType.Rgba8888, SKAlphaType.Premul));
@@ -54,7 +55,7 @@ public static class CardRenderer
         DrawHeader(canvas, record);
         DrawPnl(canvas, record);
         DrawDataGrid(canvas, record);
-        DrawDailyStats(canvas, stats, dailyDrawdownLimit, accountBalance);
+        DrawDailyStats(canvas, stats, dailyDrawdownLimit, accountBalance, traderName);
         if (chartBytes != null) DrawChartPanel(canvas, chartBytes);
 
         using var image = surface.Snapshot();
@@ -237,7 +238,7 @@ public static class CardRenderer
     // ── Tages-Stats ───────────────────────────────────────────────────────
 
     private static void DrawDailyStats(SKCanvas c, DailyStatsSnapshot stats,
-        decimal drawdownLimit, decimal balance)
+        decimal drawdownLimit, decimal balance, string traderName = "")
     {
         float barY = CardH - 72f;
 
@@ -293,8 +294,9 @@ public static class CardRenderer
             if (fillW > 0) c.DrawRect(barLeft, barY + 56, fillW, 6, fillPaint);
         }
 
-        // Zeitstempel
-        string ts = $"Munich Traders  ·  {DateTime.Now:dd.MM.yyyy  HH:mm} CET";
+        // Zeitstempel + optionaler Trader-Name
+        string nameSection = string.IsNullOrWhiteSpace(traderName) ? "" : $"  ·  {traderName}";
+        string ts = $"Munich Traders  ·  {DateTime.Now:dd.MM.yyyy  HH:mm} CET{nameSection}";
         using var tsFont  = MakeFont("Inter", 8f, SKFontStyle.Normal);
         using var tsPaint = new SKPaint { Color = SKColor.Parse("#555555"), IsAntialias = true };
         float tsW = tsFont.MeasureText(MemoryMarshal.Cast<char, ushort>(ts.AsSpan()));

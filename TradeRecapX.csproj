@@ -21,6 +21,7 @@
   <ItemGroup>
     <EmbeddedResource Include="arrow_up_green.png" />
     <EmbeddedResource Include="arrow_down_red.png" />
+    <EmbeddedResource Include="munich-traders-logo.png" />
   </ItemGroup>
 
   <ItemGroup>

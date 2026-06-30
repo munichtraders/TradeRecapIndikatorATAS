@@ -35,7 +35,8 @@ public static class CardRenderer
         byte[]? logoBytes,
         byte[]? chartBytes,       // aktuell immer null (Screenshot deaktiviert)
         decimal dailyDrawdownLimit,
-        decimal accountBalance)
+        decimal accountBalance,
+        string traderName = "")
     {
         using var bmp = new Bitmap(W, H, PixelFormat.Format32bppArgb);
         using var g   = Graphics.FromImage(bmp);
@@ -44,7 +45,7 @@ public static class CardRenderer
         g.InterpolationMode = InterpolationMode.HighQualityBicubic;
         g.Clear(BgColor);
 
-        DrawHeader(g, record, logoBytes);
+        DrawHeader(g, record, logoBytes, traderName);
         DrawSymbolRow(g, record);
         DrawPnlBlock(g, record, accountBalance, stats, out float pnlSepY);
         float chartY = pnlSepY + 8f;
@@ -60,7 +61,7 @@ public static class CardRenderer
 
     // ── Header (y 0–130) ──────────────────────────────────────────────────
 
-    private static void DrawHeader(Graphics g, PositionRecord record, byte[]? logoBytes)
+    private static void DrawHeader(Graphics g, PositionRecord record, byte[]? logoBytes, string traderName = "")
     {
         // Gold-Akzentstreifen oben
         using var goldBrush = new SolidBrush(GoldColor);
@@ -70,14 +71,23 @@ public static class CardRenderer
         const float LogoH = 120f;
         DrawLogoScaled(g, logoBytes, Pad, 14, LogoH);
 
-        // Datum rechtsbündig — doppelt so groß wie vorher
+        // Datum rechtsbündig
         string dateStr = record.CloseTime.ToString("dd.MM.yyyy");
         using var dateFont   = GetFont("Montserrat", 32f, FontStyle.Bold);
         using var mutedBrush = new SolidBrush(TextMuted);
         var dateSz = g.MeasureString(dateStr, dateFont);
-        g.DrawString(dateStr, dateFont, mutedBrush, W - Pad - dateSz.Width, 58);
+        g.DrawString(dateStr, dateFont, mutedBrush, W - Pad - dateSz.Width, 40);
 
-        // Trennlinie (nach dem größeren Logo nach unten verschoben)
+        // Trader-Name rechtsbündig unter dem Datum
+        if (!string.IsNullOrWhiteSpace(traderName))
+        {
+            using var nameFont  = GetFont("Montserrat", 26f, FontStyle.Bold);
+            using var nameBrush = new SolidBrush(GoldColor);
+            var nameSz = g.MeasureString(traderName, nameFont);
+            g.DrawString(traderName, nameFont, nameBrush, W - Pad - nameSz.Width, 82);
+        }
+
+        // Trennlinie
         using var sep = new Pen(GoldColor, 1.5f);
         g.DrawLine(sep, Pad, 152, W - Pad, 152);
     }
