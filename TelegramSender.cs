@@ -39,22 +39,28 @@ public static class TelegramSender
         }
     }
 
-    public static string BuildCaption(PositionRecord record, DailyStatsSnapshot stats)
+    public static string BuildCaption(PositionRecord record, DailyStatsSnapshot stats, string traderName = "")
     {
         bool isProfit = record.PnlUsd >= 0;
         string emoji = isProfit ? "🟢" : "🔴";
         string dir   = record.Direction == PositionDirection.Long ? "LONG" : "SHORT";
         string sign  = isProfit ? "+" : "";
 
-        var lines = new List<string>
+        var lines = new List<string>();
+
+        lines.Add($"{emoji} <b>{record.Symbol} {dir}</b>");
+
+        if (!string.IsNullOrWhiteSpace(traderName))
+            lines.Add($"👤 <b>{traderName}</b>");
+
+        lines.AddRange(new[]
         {
-            $"{emoji} <b>{record.Symbol} {dir}</b>",
             $"P&amp;L: <b>{sign}{record.PnlUsd:F2} $ ({sign}{record.PnlTicks} Ticks)</b>",
             $"Entry: {record.OpenTime:HH:mm:ss} @ {record.AvgEntryPrice:F2}",
             $"Exit:  {record.CloseTime:HH:mm:ss} @ {record.AvgExitPrice:F2}",
             $"Kontrakte: {record.Contracts}  |  Dauer: {FormatDuration(record.Duration)}",
             $"Min: {record.MAETicks:+0;-0} Ticks ({record.MAEUsd:+0.00;-0.00} $)  |  Max: {record.MFETicks:+0;-0} Ticks ({record.MFEUsd:+0.00;-0.00} $)",
-        };
+        });
 
         if (!string.IsNullOrWhiteSpace(record.TradeTag))
             lines.Add($"Tag: <i>{record.TradeTag}</i>");

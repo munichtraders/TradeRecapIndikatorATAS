@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
+using System.Linq;
 using System.Drawing;
 using System.IO;
 using System.Net.Http;
@@ -116,6 +117,16 @@ public class TradeRecapIndicator : Indicator
         }
     }
 
+    private string _traderName = "";
+
+    [Display(Name = "Trader-Name (z.B. @MunichTraders)", GroupName = "Design", Order = 2,
+        Description = "Wird auf der Recap-Karte angezeigt, damit klar ist von wem der Trade stammt.")]
+    public string TraderName
+    {
+        get => _traderName;
+        set => _traderName = value;
+    }
+
     // ── Update ────────────────────────────────────────────────────────────
 
     [Display(Name = "Update installieren", GroupName = "Update", Order = 1,
@@ -144,7 +155,7 @@ public class TradeRecapIndicator : Indicator
     // Zeitstempel des Indikator-Starts — historische Trades davor werden nicht verschickt
     private DateTime _initTime;
 
-    private const string CurrentVersion = "260629";
+    private const string CurrentVersion = "260630";
 
     // 0 = unbekannt, 1 = verbunden, 2 = Fehler
     private volatile int _tgStatus;
@@ -278,15 +289,16 @@ public class TradeRecapIndicator : Indicator
         byte[]? logoSnap   = _logoBytes;
         string botToken    = _botToken;
         string chatId      = _chatId;
+        string traderName  = _traderName;
 
         _ = Task.Run(async () =>
         {
             try
             {
                 byte[] cardBytes = CardRenderer.RenderCard(
-                    recordSnapshot, statsSnapshot, logoSnap, chartBytes, ddLimit, balance);
+                    recordSnapshot, statsSnapshot, logoSnap, chartBytes, ddLimit, balance, traderName);
 
-                string caption = TelegramSender.BuildCaption(recordSnapshot, statsSnapshot);
+                string caption = TelegramSender.BuildCaption(recordSnapshot, statsSnapshot, traderName);
 
                 await TelegramSender.SendPhotoAsync(botToken, chatId, cardBytes, caption, _httpClient)
                     .ConfigureAwait(false);
@@ -496,8 +508,31 @@ public class TradeRecapIndicator : Indicator
 
     private static byte[]? TryLoadLogo(string path)
     {
-        if (string.IsNullOrWhiteSpace(path) || !File.Exists(path)) return null;
-        try { return File.ReadAllBytes(path); }
+        // 1. Nutzerpfad (überschreibt Standard-Logo)
+        if (!string.IsNullOrWhiteSpace(path) && File.Exists(path))
+        {
+            try { return File.ReadAllBytes(path); }
+            catch { }
+        }
+        // 2. Eingebettetes Standard-Logo als Fallback
+        return LoadEmbeddedLogo();
+    }
+
+    private static byte[]? LoadEmbeddedLogo()
+    {
+        try
+        {
+            var asm  = typeof(TradeRecapIndicator).Assembly;
+            string resourceName = asm.GetManifestResourceNames()
+                .FirstOrDefault(n => n.EndsWith("munich-traders-logo.png", StringComparison.OrdinalIgnoreCase))
+                ?? "";
+            if (string.IsNullOrEmpty(resourceName)) return null;
+            using var stream = asm.GetManifestResourceStream(resourceName);
+            if (stream == null) return null;
+            using var ms = new MemoryStream();
+            stream.CopyTo(ms);
+            return ms.ToArray();
+        }
         catch { return null; }
     }
 
