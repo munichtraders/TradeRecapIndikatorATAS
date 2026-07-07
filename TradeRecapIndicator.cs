@@ -151,6 +151,9 @@ public class TradeRecapIndicator : Indicator
 
     // Geschlossene PnL aus ATAS-Account (wird via OnPortfolioChanged aktualisiert)
     private decimal _accountClosedPnl = 0m;
+    // Zählt jedes OnPortfolioChanged-Update — damit OnPositionClosed erkennen kann,
+    // ob der PnL-Wert für DIESEN Trade schon angekommen ist (ATAS meldet ihn leicht verzögert)
+    private int _portfolioUpdateSeq = 0;
 
     // Zeitstempel des Indikator-Starts — historische Trades davor werden nicht verschickt
     private DateTime _initTime;
@@ -242,6 +245,7 @@ public class TradeRecapIndicator : Indicator
                 if (type?.GetProperty(name)?.GetValue(portfolio) is decimal val)
                 {
                     _accountClosedPnl = val;
+                    Interlocked.Increment(ref _portfolioUpdateSeq);
                     return;
                 }
             }
@@ -283,7 +287,7 @@ public class TradeRecapIndicator : Indicator
 
         // Snapshots für Background-Thread (immutable)
         var recordSnapshot = record;
-        var statsSnapshot  = _dailyStats.Snapshot(_accountClosedPnl);
+        int seqAtClose     = Volatile.Read(ref _portfolioUpdateSeq);
         decimal ddLimit    = _dailyDrawdownLimit;
         decimal balance    = _accountBalance;
         byte[]? logoSnap   = _logoBytes;
@@ -295,6 +299,15 @@ public class TradeRecapIndicator : Indicator
         {
             try
             {
+                // ATAS meldet den geschlossenen Konto-PnL dieses Trades erst mit leichter
+                // Verzögerung über OnPortfolioChanged. Ohne diese Wartezeit würde die
+                // Tages-P&L noch den Stand VOR diesem Trade zeigen (ein Trade "hinterher").
+                var deadline = DateTime.UtcNow.AddMilliseconds(2000);
+                while (Volatile.Read(ref _portfolioUpdateSeq) == seqAtClose && DateTime.UtcNow < deadline)
+                    await Task.Delay(100).ConfigureAwait(false);
+
+                var statsSnapshot = _dailyStats.Snapshot(_accountClosedPnl);
+
                 byte[] cardBytes = CardRenderer.RenderCard(
                     recordSnapshot, statsSnapshot, logoSnap, chartBytes, ddLimit, balance, traderName);
 
