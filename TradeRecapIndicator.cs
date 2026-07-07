@@ -62,8 +62,8 @@ public class TradeRecapIndicator : Indicator
 
     // ── Server-Journal (zentrale CSV auf dem Munich-Traders-Server) ────────
 
-    private string _serverUrl = "";
-    private string _serverToken = "";
+    private string _serverUrl = "http://187.124.10.151:9878/trade";
+    private string _serverToken = "5029729378e17dfb4284a2e75855f2ca3bd1a8a95805c94c";
 
     [Display(Name = "Server-URL (z.B. http://SERVER:9878/trade)", GroupName = "Server-Journal", Order = 1,
         Description = "Jeder abgeschlossene Trade wird zusaetzlich an diesen Server gesendet und dort in einer zentralen CSV gesammelt.")]
@@ -183,7 +183,7 @@ public class TradeRecapIndicator : Indicator
     // Sperre würden dann alle Trades des Tages ein zweites Mal an Telegram gehen.
     private readonly HashSet<string> _sentTradeKeys = new();
 
-    private const string CurrentVersion = "260713";
+    private const string CurrentVersion = "260714";
 
     // 0 = unbekannt, 1 = verbunden, 2 = Fehler
     private volatile int _tgStatus;
