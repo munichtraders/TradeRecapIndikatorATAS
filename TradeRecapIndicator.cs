@@ -163,7 +163,7 @@ public class TradeRecapIndicator : Indicator
     // Sperre würden dann alle Trades des Tages ein zweites Mal an Telegram gehen.
     private readonly HashSet<string> _sentTradeKeys = new();
 
-    private const string CurrentVersion = "260711";
+    private const string CurrentVersion = "260712";
 
     // 0 = unbekannt, 1 = verbunden, 2 = Fehler
     private volatile int _tgStatus;
@@ -216,23 +216,6 @@ public class TradeRecapIndicator : Indicator
         SubscribeToTimer(TimeSpan.FromSeconds(60), () => _ = CheckTelegramAsync());
 
         _ = CheckVersionAsync();
-
-        DebugLog($"OnInitialize: neue Instanz, _initTime(UTC)={_initTime:O}");
-    }
-
-    // ── Diagnose-Logging (temporär, zur Fehlersuche doppelter Telegram-Sends) ──
-
-    private void DebugLog(string message)
-    {
-        try
-        {
-            string path = Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-                "ATAS", "Indicators", "TradeRecap_debug.log");
-            File.AppendAllText(path,
-                $"{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff} [inst:{GetHashCode():X8}] {message}{Environment.NewLine}");
-        }
-        catch { }
     }
 
     // ── Bar-Berechnung (MAE/MFE-Tracking) ────────────────────────────────
@@ -280,7 +263,6 @@ public class TradeRecapIndicator : Indicator
     protected override void OnNewMyTrade(MyTrade trade)
     {
         base.OnNewMyTrade(trade);
-        DebugLog($"OnNewMyTrade: Id={trade.Id} Symbol={trade.Security?.Code ?? trade.SecurityId} Dir={trade.OrderDirection} Price={trade.Price} Vol={trade.Volume} Time={trade.Time:O}");
         _positionTracker.ProcessFill(trade);
     }
 
@@ -288,25 +270,13 @@ public class TradeRecapIndicator : Indicator
 
     private void OnPositionClosed(PositionRecord record)
     {
-        DebugLog($"OnPositionClosed: Symbol={record.Symbol} Open={record.OpenTime:O} Close={record.CloseTime:O} Entry={record.AvgEntryPrice} Exit={record.AvgExitPrice} Contracts={record.Contracts}");
-
         // Historische Trades beim Chart-Reload ignorieren
-        if (DateTime.SpecifyKind(record.CloseTime, DateTimeKind.Utc) < _initTime)
-        {
-            DebugLog($"  -> IGNORIERT: CloseTime vor _initTime ({_initTime:O})");
-            return;
-        }
+        if (DateTime.SpecifyKind(record.CloseTime, DateTimeKind.Utc) < _initTime) return;
 
         // Replay-Schutz: denselben Trade nicht zweimal verschicken (z. B. wenn ATAS beim
         // Schließen die Session-Fills nochmal durch OnNewMyTrade schickt)
         string tradeKey = $"{record.Symbol}|{record.Direction}|{record.OpenTime:O}|{record.CloseTime:O}|{record.AvgEntryPrice}|{record.AvgExitPrice}|{record.Contracts}";
-        if (!_sentTradeKeys.Add(tradeKey))
-        {
-            DebugLog($"  -> IGNORIERT: Duplikat/Replay (Key bereits gesehen)");
-            return;
-        }
-
-        DebugLog($"  -> WIRD VERSCHICKT");
+        if (!_sentTradeKeys.Add(tradeKey)) return;
 
         // Tick-Daten: primär aus dem Trade-Fill (Security), Fallback statische Tabelle
         decimal tickSize = record.TickSize > 0 ? record.TickSize : GetTickSizeFallback(record.Symbol);
@@ -353,16 +323,13 @@ public class TradeRecapIndicator : Indicator
 
                 string caption = TelegramSender.BuildCaption(recordSnapshot, statsSnapshot, traderName);
 
-                DebugLog($"  -> Telegram-Send startet: {recordSnapshot.Symbol} Close={recordSnapshot.CloseTime:O}");
                 await TelegramSender.SendPhotoAsync(botToken, chatId, cardBytes, caption, _httpClient)
                     .ConfigureAwait(false);
-                DebugLog($"  -> Telegram-Send fertig: {recordSnapshot.Symbol} Close={recordSnapshot.CloseTime:O}");
 
                 _csvWriter.AppendTrade(recordSnapshot, statsSnapshot);
             }
             catch (Exception ex)
             {
-                DebugLog($"  -> FEHLER im Background-Task: {ex.Message}");
                 System.Diagnostics.Debug.WriteLine($"[TradeRecap] Fehler: {ex.Message}");
             }
         });
