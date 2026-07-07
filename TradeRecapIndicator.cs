@@ -163,7 +163,7 @@ public class TradeRecapIndicator : Indicator
     // Sperre würden dann alle Trades des Tages ein zweites Mal an Telegram gehen.
     private readonly HashSet<string> _sentTradeKeys = new();
 
-    private const string CurrentVersion = "260710";
+    private const string CurrentVersion = "260711";
 
     // 0 = unbekannt, 1 = verbunden, 2 = Fehler
     private volatile int _tgStatus;
@@ -280,7 +280,7 @@ public class TradeRecapIndicator : Indicator
     protected override void OnNewMyTrade(MyTrade trade)
     {
         base.OnNewMyTrade(trade);
-        DebugLog($"OnNewMyTrade: Symbol={trade.Security?.Code ?? trade.SecurityId} Dir={trade.OrderDirection} Price={trade.Price} Vol={trade.Volume} Time={trade.Time:O}");
+        DebugLog($"OnNewMyTrade: Id={trade.Id} Symbol={trade.Security?.Code ?? trade.SecurityId} Dir={trade.OrderDirection} Price={trade.Price} Vol={trade.Volume} Time={trade.Time:O}");
         _positionTracker.ProcessFill(trade);
     }
 

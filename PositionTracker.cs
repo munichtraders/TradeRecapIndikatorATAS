@@ -96,6 +96,15 @@ public class PositionTracker
     private readonly DailyStats _dailyStats;
     private string _pendingTag = "";
 
+    // Fill-IDs, die bereits durch die Open/Close-Pairing-Logik gelaufen sind.
+    // ATAS liefert beim Schließen der Plattform offenbar alle Fills der Session
+    // nochmal über OnNewMyTrade an dieselbe laufende Instanz aus (Replay). Ohne
+    // diese Sperre würde die Pairing-Logik (welche bei _active==null neu startet)
+    // die alten Fills versetzt neu zusammensetzen und dabei falsche "neue" Trades
+    // erzeugen, die weder der _initTime-Filter noch der Ergebnis-Fingerprint
+    // erkennen, weil sie andere Open/Close-Kombinationen ergeben.
+    private readonly HashSet<string> _processedFillIds = new();
+
     public event Action<PositionRecord>? PositionClosed;
 
     public bool IsPositionOpen  => _active != null;
@@ -110,6 +119,11 @@ public class PositionTracker
 
     public void ProcessFill(MyTrade trade)
     {
+        // Replay-Schutz: denselben Fill (z. B. beim ATAS-Schließen erneut ausgeliefert)
+        // nicht nochmal durch die Pairing-Logik laufen lassen.
+        if (!string.IsNullOrEmpty(trade.Id) && !_processedFillIds.Add(trade.Id))
+            return;
+
         // Korrekte ATAS API: trade.OrderDirection vom Typ OrderDirections (Buy/Sell)
         // trade.Time ist DateTime (nicht DateTimeOffset)
         // trade.Security?.Symbol liefert das Symbol
