@@ -158,7 +158,12 @@ public class TradeRecapIndicator : Indicator
     // Zeitstempel des Indikator-Starts — historische Trades davor werden nicht verschickt
     private DateTime _initTime;
 
-    private const string CurrentVersion = "260708";
+    // Fingerprints bereits verschickter Trades — ATAS liefert beim Schließen/Neuladen
+    // manchmal die Fills der Session nochmal durch OnNewMyTrade (Replay). Ohne diese
+    // Sperre würden dann alle Trades des Tages ein zweites Mal an Telegram gehen.
+    private readonly HashSet<string> _sentTradeKeys = new();
+
+    private const string CurrentVersion = "260709";
 
     // 0 = unbekannt, 1 = verbunden, 2 = Fehler
     private volatile int _tgStatus;
@@ -267,6 +272,11 @@ public class TradeRecapIndicator : Indicator
     {
         // Historische Trades beim Chart-Reload ignorieren
         if (DateTime.SpecifyKind(record.CloseTime, DateTimeKind.Utc) < _initTime) return;
+
+        // Replay-Schutz: denselben Trade nicht zweimal verschicken (z. B. wenn ATAS beim
+        // Schließen die Session-Fills nochmal durch OnNewMyTrade schickt)
+        string tradeKey = $"{record.Symbol}|{record.Direction}|{record.OpenTime:O}|{record.CloseTime:O}|{record.AvgEntryPrice}|{record.AvgExitPrice}|{record.Contracts}";
+        if (!_sentTradeKeys.Add(tradeKey)) return;
 
         // Tick-Daten: primär aus dem Trade-Fill (Security), Fallback statische Tabelle
         decimal tickSize = record.TickSize > 0 ? record.TickSize : GetTickSizeFallback(record.Symbol);
