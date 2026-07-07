@@ -60,6 +60,26 @@ public class TradeRecapIndicator : Indicator
         }
     }
 
+    // ── Server-Journal (zentrale CSV auf dem Munich-Traders-Server) ────────
+
+    private string _serverUrl = "";
+    private string _serverToken = "";
+
+    [Display(Name = "Server-URL (z.B. http://SERVER:9878/trade)", GroupName = "Server-Journal", Order = 1,
+        Description = "Jeder abgeschlossene Trade wird zusaetzlich an diesen Server gesendet und dort in einer zentralen CSV gesammelt.")]
+    public string ServerUrl
+    {
+        get => _serverUrl;
+        set => _serverUrl = value;
+    }
+
+    [Display(Name = "Server-Token", GroupName = "Server-Journal", Order = 2)]
+    public string ServerToken
+    {
+        get => _serverToken;
+        set => _serverToken = value;
+    }
+
     // ── Prop Firm ─────────────────────────────────────────────────────────
 
     private decimal _dailyDrawdownLimit;
@@ -163,7 +183,7 @@ public class TradeRecapIndicator : Indicator
     // Sperre würden dann alle Trades des Tages ein zweites Mal an Telegram gehen.
     private readonly HashSet<string> _sentTradeKeys = new();
 
-    private const string CurrentVersion = "260712";
+    private const string CurrentVersion = "260713";
 
     // 0 = unbekannt, 1 = verbunden, 2 = Fehler
     private volatile int _tgStatus;
@@ -304,6 +324,8 @@ public class TradeRecapIndicator : Indicator
         string botToken    = _botToken;
         string chatId      = _chatId;
         string traderName  = _traderName;
+        string serverUrl   = _serverUrl;
+        string serverToken = _serverToken;
 
         _ = Task.Run(async () =>
         {
@@ -327,6 +349,10 @@ public class TradeRecapIndicator : Indicator
                     .ConfigureAwait(false);
 
                 _csvWriter.AppendTrade(recordSnapshot, statsSnapshot);
+
+                await TradeRecapServerSender.SendAsync(
+                    serverUrl, serverToken, recordSnapshot, statsSnapshot, traderName, _httpClient)
+                    .ConfigureAwait(false);
             }
             catch (Exception ex)
             {

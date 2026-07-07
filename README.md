@@ -47,6 +47,8 @@ Nach jedem geschlossenen Trade rendert der Indikator automatisch eine gebrandete
 | **Telegram** | Bot Token | Token vom BotFather |
 | **Telegram** | Chat ID | ID deines Kanals oder privaten Chats |
 | **Journal** | CSV-Pfad | Optionaler Pfad für lokales Trade-Journal (z. B. `C:\Trading\journal.csv`) |
+| **Server-Journal** | Server-URL | Adresse des Munich-Traders-Ingestion-Servers (z. B. `http://SERVER:9878/trade`) — sammelt alle Trades zentral in einer CSV |
+| **Server-Journal** | Server-Token | Auth-Token für den Ingestion-Server |
 | **Prop Firm** | Tages-Drawdown-Limit ($) | Wird als Warnschwelle auf der Karte angezeigt |
 | **Prop Firm** | Konto-Größe ($) | Fallback, falls ATAS keinen Kontostand liefert |
 | **Design** | Logo-Pfad (PNG) | Dein Logo, erscheint oben links auf der Karte |
