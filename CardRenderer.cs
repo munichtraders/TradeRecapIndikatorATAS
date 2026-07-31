@@ -197,13 +197,19 @@ public static class CardRenderer
         const float RowH = 130f;
         float colW       = (W - Pad * 2) / 2f;
 
+        // Tatsächlicher Start-/Schluss-Fill (nicht der mengengewichtete Ø-Preis) —
+        // das ist der Preis, bei dem der Trader real ein-/ausgestiegen ist. Der
+        // Ø-Preis (für die PnL-Rechnung maßgeblich) steht ausführlich in der Caption.
+        decimal actualEntryPrice = record.OpenFills.Count  > 0 ? record.OpenFills[0].Price   : record.AvgEntryPrice;
+        decimal actualExitPrice  = record.CloseFills.Count > 0 ? record.CloseFills[^1].Price : record.AvgExitPrice;
+
         // MIN/MAX zuerst, dann Einstieg/Ausstieg, dann Dauer/Kontrakte
         var cells = new (string Label, string Value, bool Highlight)[]
         {
             ("MIN TICKS",  $"{record.MAETicks:+#;-#;0} Ticks  ·  {record.MAEUsd:+0.00;-0.00} $", false),
             ("MAX TICKS",  $"{record.MFETicks:+#;-#;0} Ticks  ·  {record.MFEUsd:+0.00;-0.00} $", false),
-            ("EINSTIEG",   $"{record.OpenTime:HH:mm:ss}  @  {record.AvgEntryPrice:F2}",           false),
-            ("AUSSTIEG",   $"{record.CloseTime:HH:mm:ss}  @  {record.AvgExitPrice:F2}",           false),
+            ("EINSTIEG",   $"{record.OpenTime:HH:mm:ss}  @  {actualEntryPrice:F2}",               false),
+            ("AUSSTIEG",   $"{record.CloseTime:HH:mm:ss}  @  {actualExitPrice:F2}",               false),
             ("DAUER",      FormatDuration(record.Duration),                                        false),
             ("KONTRAKTE",  record.Contracts.ToString(),                                            false),
         };

@@ -4,6 +4,11 @@ Alle Änderungen werden hier dokumentiert. Format: `YYMMDD`.
 
 ---
 
+## [260803] — 2026-07-31
+
+### Behoben
+- **Recap-Karte (CardRenderer) zeigte weiterhin Ø-Preis bei EINSTIEG/AUSSTIEG:** Der Fix aus 260802 deckte nur die Telegram-Caption und das MiniChart ab — die eigentliche gerenderte Karte (`CardRenderer.cs`, die als Foto verschickt wird) hatte ihre eigenen `EINSTIEG`/`AUSSTIEG`-Felder, die weiterhin `AvgEntryPrice`/`AvgExitPrice` zeigten. Jetzt zeigt auch die Karte den tatsächlichen ersten/letzten Fill-Preis.
+
 ## [260802] — 2026-07-31
 
 ### Behoben
