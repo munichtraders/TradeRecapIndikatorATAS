@@ -59,8 +59,16 @@ public static class TelegramSender
             $"Entry: {record.OpenTime:HH:mm:ss} @ {record.AvgEntryPrice:F2}",
             $"Exit:  {record.CloseTime:HH:mm:ss} @ {record.AvgExitPrice:F2}",
             $"Kontrakte: {record.Contracts}  |  Dauer: {FormatDuration(record.Duration)}",
-            $"Min: {record.MAETicks:+0;-0} Ticks ({record.MAEUsd:+0.00;-0.00} $)  |  Max: {record.MFETicks:+0;-0} Ticks ({record.MFEUsd:+0.00;-0.00} $)",
         });
+
+        if (record.OpenFills.Count > 1 || record.CloseFills.Count > 1)
+        {
+            string opens  = string.Join(", ", record.OpenFills.Select(f  => $"+{f.Qty}@{f.Price:F2}"));
+            string closes = string.Join(", ", record.CloseFills.Select(f => $"-{f.Qty}@{f.Price:F2}"));
+            lines.Add($"Fills: {opens} → {closes}");
+        }
+
+        lines.Add($"Min: {record.MAETicks:+0;-0} Ticks ({record.MAEUsd:+0.00;-0.00} $)  |  Max: {record.MFETicks:+0;-0} Ticks ({record.MFEUsd:+0.00;-0.00} $)");
 
         if (!string.IsNullOrWhiteSpace(record.TradeTag))
             lines.Add($"Tag: <i>{record.TradeTag}</i>");

@@ -4,6 +4,15 @@ Alle Änderungen werden hier dokumentiert. Format: `YYMMDD`.
 
 ---
 
+## [260731] — 2026-07-31
+
+### Neu
+- **Scale-In/Scale-Out sichtbar im MiniChart:** Jeder Nachkauf (Scale-In) und jeder Teilverkauf (Scale-Out) innerhalb eines Trades bekommt jetzt einen eigenen Pfeil im generierten Mini-Chart — kleiner (26px statt 44px) und transparenter (~47% Deckkraft) als die Haupt-Entry-/Exit-Pfeile, positioniert am tatsächlichen Fill-Preis/-Zeitpunkt. Mehrere Fills im selben Balken werden per kleinem Rechts-Versatz auseinandergezogen, damit sie nicht komplett übereinanderliegen.
+- **Fill-Aufschlüsselung in der Telegram-Caption:** Bei Trades mit mehr als einem Open- oder Close-Fill zeigt die Caption zusätzlich eine `Fills:`-Zeile (z. B. `Fills: +1@15000.00, +1@15200.00 → -1@15300.00, -1@15400.00`). Einfache Trades ohne Scale-In/-Out bleiben unverändert ohne diese Zeile.
+
+### Hinweis
+- Die zugrunde liegende Trade-Erkennung (`PositionTracker`) berechnete Scale-In/Scale-Out bereits vorher korrekt (mengengewichteter Ø-Entry/Ø-Exit, korrekter Gesamt-PnL) — diese Änderung ist rein visuell/informativ, keine Änderung an der PnL-Logik.
+
 ## [260629] — 2026-06-18
 
 ### Geändert
