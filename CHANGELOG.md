@@ -4,6 +4,11 @@ Alle Änderungen werden hier dokumentiert. Format: `YYMMDD`.
 
 ---
 
+## [260802] — 2026-07-31
+
+### Behoben
+- **Entry/Exit zeigten Ø-Preis statt tatsächlichem Fill-Preis:** Bei Trades mit Scale-In/Scale-Out zeigten `Entry:`/`Exit:` (Caption) sowie die `ENTRY`/`EXIT`-Linien und Haupt-Pfeile (MiniChart) bisher den mengengewichteten Durchschnittspreis statt des Preises, bei dem der Trade tatsächlich gestartet/beendet wurde. Jetzt zeigen beide den echten ersten Open-Fill- bzw. letzten Close-Fill-Preis; die Caption ergänzt bei mehreren Fills zusätzlich den Ø-Preis in Klammern (z. B. `Entry: ... @ 28504.50 (Ø 28500.56)`), damit der Bezug zur PnL-Berechnung (die weiterhin auf dem Ø-Preis basiert) nachvollziehbar bleibt.
+
 ## [260801] — 2026-07-31
 
 ### Entfernt

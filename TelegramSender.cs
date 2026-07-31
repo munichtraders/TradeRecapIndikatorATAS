@@ -48,6 +48,13 @@ public static class TelegramSender
 
         var lines = new List<string>();
 
+        // Tatsächlicher Start-/Schluss-Fill (nicht der mengengewichtete Ø-Preis) —
+        // das ist der Preis, bei dem der Trader real ein-/ausgestiegen ist.
+        decimal actualEntryPrice = record.OpenFills.Count  > 0 ? record.OpenFills[0].Price  : record.AvgEntryPrice;
+        decimal actualExitPrice  = record.CloseFills.Count > 0 ? record.CloseFills[^1].Price : record.AvgExitPrice;
+        string entrySuffix = record.OpenFills.Count  > 1 ? $" (Ø {record.AvgEntryPrice:F2})" : "";
+        string exitSuffix  = record.CloseFills.Count > 1 ? $" (Ø {record.AvgExitPrice:F2})"  : "";
+
         lines.Add($"{emoji} <b>{record.Symbol} {dir}</b>");
 
         if (!string.IsNullOrWhiteSpace(traderName))
@@ -56,8 +63,8 @@ public static class TelegramSender
         lines.AddRange(new[]
         {
             $"P&amp;L: <b>{sign}{record.PnlUsd:F2} $ ({sign}{record.PnlTicks} Ticks)</b>",
-            $"Entry: {record.OpenTime:HH:mm:ss} @ {record.AvgEntryPrice:F2}",
-            $"Exit:  {record.CloseTime:HH:mm:ss} @ {record.AvgExitPrice:F2}",
+            $"Entry: {record.OpenTime:HH:mm:ss} @ {actualEntryPrice:F2}{entrySuffix}",
+            $"Exit:  {record.CloseTime:HH:mm:ss} @ {actualExitPrice:F2}{exitSuffix}",
             $"Kontrakte: {record.Contracts}  |  Dauer: {FormatDuration(record.Duration)}",
         });
 

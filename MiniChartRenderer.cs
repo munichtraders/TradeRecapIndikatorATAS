@@ -58,11 +58,16 @@ public static class MiniChartRenderer
 
         int n = candles.Count;
 
+        // Tatsächlicher Start-/Schluss-Fill des Trades (nicht der mengengewichtete
+        // Durchschnitt) — das ist der Preis, bei dem der Trader real ein-/ausgestiegen ist.
+        decimal actualEntryPrice = record.OpenFills.Count  > 0 ? record.OpenFills[0].Price       : record.AvgEntryPrice;
+        decimal actualExitPrice  = record.CloseFills.Count > 0 ? record.CloseFills[^1].Price      : record.AvgExitPrice;
+
         // ── Preisbereich ──────────────────────────────────────────────────
         decimal lo = candles.Min(c => c.Low);
         decimal hi = candles.Max(c => c.High);
-        lo = Math.Min(lo, Math.Min(record.AvgEntryPrice, record.AvgExitPrice));
-        hi = Math.Max(hi, Math.Max(record.AvgEntryPrice, record.AvgExitPrice));
+        lo = Math.Min(lo, Math.Min(actualEntryPrice, actualExitPrice));
+        hi = Math.Max(hi, Math.Max(actualEntryPrice, actualExitPrice));
         decimal range = hi - lo;
         if (range == 0) range = 1;
         decimal margin = range * 0.10m;
@@ -124,31 +129,33 @@ public static class MiniChartRenderer
         }
 
         // ── Entry / Exit Preislinien ──────────────────────────────────────
+        // Zeigen den tatsächlichen ersten/letzten Fill-Preis, nicht den Ø-Preis
+        // (der bleibt intern für die PnL-Berechnung maßgeblich).
         float entryLineX2 = entryIdx >= 0 ? BarX(entryIdx) : PadL + ChartW;
-        DrawHLine(g, PriceToY(record.AvgEntryPrice),
+        DrawHLine(g, PriceToY(actualEntryPrice),
             PadL, entryLineX2, Gold, Gold,
-            "ENTRY", $"{record.AvgEntryPrice:F2}");
+            "ENTRY", $"{actualEntryPrice:F2}");
 
         Color exitCol      = record.PnlUsd >= 0 ? Bull : Bear;
         Color exitLineGray = Color.FromArgb(180, 180, 180, 180);
         float exitX2 = PadL + ChartW;
         float exitX1 = Math.Max(PadL, exitX2 - 10f * candleAreaW);
-        DrawHLine(g, PriceToY(record.AvgExitPrice),
+        DrawHLine(g, PriceToY(actualExitPrice),
             exitX1, exitX2, exitLineGray, exitCol,
-            "EXIT", $"{record.AvgExitPrice:F2}");
+            "EXIT", $"{actualExitPrice:F2}");
 
         // ── Entry / Exit Marker-Pfeile (GDI+-Vektoren, keine externen Dateien) ──
         bool entryIsLong = record.Direction == PositionDirection.Long;
         if (entryIdx >= 0)
-            DrawArrowMarker(g, BarX(entryIdx), PriceToY(record.AvgEntryPrice),
+            DrawArrowMarker(g, BarX(entryIdx), PriceToY(actualEntryPrice),
                             pointUp: entryIsLong);
         if (exitIdx >= 0)
-            DrawArrowMarker(g, BarX(exitIdx), PriceToY(record.AvgExitPrice),
+            DrawArrowMarker(g, BarX(exitIdx), PriceToY(actualExitPrice),
                             pointUp: !entryIsLong);
 
         // ── Zusatz-Pfeile für Nachkäufe (Scale-In) / Teilverkäufe (Scale-Out) ──
         // Der erste Open-Fill und der letzte Close-Fill sind bereits durch die
-        // Haupt-Pfeile oben abgedeckt (Ø-Entry/Ø-Exit) — hier nur die Zwischenschritte.
+        // Haupt-Pfeile oben abgedeckt — hier nur die Zwischenschritte.
         var arrowsPerBar = new Dictionary<int, int>();
         if (entryIdx >= 0) arrowsPerBar[entryIdx] = 1;
         if (exitIdx  >= 0) arrowsPerBar[exitIdx]  = arrowsPerBar.GetValueOrDefault(exitIdx) + 1;
