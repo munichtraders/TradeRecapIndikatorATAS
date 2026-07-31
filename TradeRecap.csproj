@@ -12,13 +12,6 @@
     <RootNamespace>MunichTraders.TradeRecap</RootNamespace>
   </PropertyGroup>
 
-  <!-- ATAS X-Dateien ausschließen -->
-  <ItemGroup>
-    <Compile Remove="CardRendererSkia.cs" />
-    <Compile Remove="ScreenshotHelper.cs" />
-  </ItemGroup>
-
-
   <ItemGroup>
     <EmbeddedResource Include="arrow_up_green.png" />
     <EmbeddedResource Include="arrow_down_red.png" />

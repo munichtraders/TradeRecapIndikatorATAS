@@ -1,5 +1,3 @@
-#if !ATASX
-
 using System.IO;
 using System.Drawing;
 using System.Drawing.Drawing2D;
@@ -409,5 +407,3 @@ internal static class GraphicsExtensions
         return path;
     }
 }
-
-#endif

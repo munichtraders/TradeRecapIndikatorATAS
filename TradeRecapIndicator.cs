@@ -17,10 +17,6 @@ namespace MunichTraders.TradeRecap;
 /// Zeichnet jeden abgeschlossenen Trade auf und sendet eine gebrandete
 /// Recap-Karte inklusive Chart-Screenshot an Telegram.
 /// Zusätzlich: lokales CSV-Journal + Tages-Stats + MAE/MFE.
-///
-/// Build-Varianten:
-///   Classic ATAS (Windows): TradeRecap.csproj  — kein ATASX-Symbol
-///   ATAS X (cross-platform): TradeRecapX.csproj — ATASX-Symbol definiert
 /// </summary>
 [DisplayName("Trade Recap (Telegram)")]
 [Category("Munich Traders")]
@@ -183,7 +179,7 @@ public class TradeRecapIndicator : Indicator
     // Sperre würden dann alle Trades des Tages ein zweites Mal an Telegram gehen.
     private readonly HashSet<string> _sentTradeKeys = new();
 
-    private const string CurrentVersion = "260731";
+    private const string CurrentVersion = "260801";
 
     // 0 = unbekannt, 1 = verbunden, 2 = Fehler
     private volatile int _tgStatus;

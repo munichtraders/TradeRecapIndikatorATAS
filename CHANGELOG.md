@@ -4,6 +4,11 @@ Alle Änderungen werden hier dokumentiert. Format: `YYMMDD`.
 
 ---
 
+## [260801] — 2026-07-31
+
+### Entfernt
+- **ATAS X komplett entfernt:** `TradeRecapX.csproj`, `CardRendererSkia.cs` und `ScreenshotHelper.cs` gelöscht (SkiaSharp-Abhängigkeit damit weg). Der Indikator existiert nur noch als Classic-ATAS-Build (`TradeRecap.csproj`, Windows). `CardRenderer.cs` läuft jetzt bedingungslos (kein `#if !ATASX`-Wrapper mehr).
+
 ## [260731] — 2026-07-31
 
 ### Neu

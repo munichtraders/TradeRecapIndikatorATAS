@@ -83,12 +83,9 @@ Alle anderen Symbole (CFDs, Krypto etc.) werden mit Tick-Wert 1:1 berechnet, sof
 
 ---
 
-## Build-Varianten
+## Build
 
-| Projekt | Ziel-Plattform |
-|---|---|
-| `TradeRecap.csproj` | Classic ATAS (Windows) |
-| `TradeRecapX.csproj` | ATAS X (Cross-Platform) |
+`dotnet build TradeRecap.csproj -c Release` (Classic ATAS, Windows).
 
 ---
 
