@@ -4,6 +4,15 @@ Alle Änderungen werden hier dokumentiert. Format: `YYMMDD`.
 
 ---
 
+## [260822] — 2026-08-20
+
+### Neu — Chart im Exit-Check
+- Der Exit-Check (5 Minuten nach Trade-Close) verschickt jetzt statt einer reinen Textnachricht den gewohnten Mini-Chart (`MiniChartRenderer`/`BuildMiniChart`) als Foto mit dem Bewertungstext als Caption.
+- Kein neuer Rendering-Code nötig: `BuildMiniChart` fenstert grundsätzlich bis zum aktuellen Bar, ruft man es beim Fälligwerden der Auswertung (statt beim Close) auf, zeigt derselbe Mini-Chart automatisch auch die Kursbewegung der 5 Minuten nach dem Exit mit.
+- Dafür musste der Fälligkeits-Check von einem separaten 15-Sekunden-Timer nach `OnCalculate` verschoben werden — `BuildMiniChart`/`GetCandle` sind nur im Indikator-Callback-Kontext sicher aufrufbar, nicht im Timer-Thread. Neuer Timer entfällt damit.
+- Fallback: kann kein Chart gebaut werden (z. B. zu wenige Kerzen), geht wie bisher eine reine Textnachricht raus.
+- Betrifft `TradeRecapIndicator.cs`.
+
 ## [260821] — 2026-08-20
 
 ### Neu — Exit-Check 5 Minuten nach Trade-Close

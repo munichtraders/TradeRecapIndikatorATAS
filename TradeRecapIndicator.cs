@@ -180,7 +180,7 @@ public class TradeRecapIndicator : Indicator
     // Sperre würden dann alle Trades des Tages ein zweites Mal an Telegram gehen.
     private readonly HashSet<string> _sentTradeKeys = new();
 
-    private const string CurrentVersion = "260821";
+    private const string CurrentVersion = "260822";
 
     // 0 = unbekannt, 1 = verbunden, 2 = Fehler
     private volatile int _tgStatus;
@@ -232,9 +232,6 @@ public class TradeRecapIndicator : Indicator
         _ = CheckTelegramAsync();
         SubscribeToTimer(TimeSpan.FromSeconds(60), () => _ = CheckTelegramAsync());
 
-        // Alle 15s auf fällige Exit-Checks prüfen (5 Minuten nach Trade-Close)
-        SubscribeToTimer(TimeSpan.FromSeconds(15), () => _ = CheckPostTradeEvaluationsAsync());
-
         _ = CheckVersionAsync();
     }
 
@@ -267,6 +264,12 @@ public class TradeRecapIndicator : Indicator
                 _postTradeEvaluator.UpdateFromBar(candle.High, candle.Low, barTimeUtc);
             }
             catch { /* Kerze evtl. noch nicht verfügbar */ }
+
+            // Fällige Auswertungen (5 Minuten seit Close um) verschicken. Muss hier in
+            // OnCalculate laufen, nicht im Timer-Thread — BuildMiniChart braucht GetCandle,
+            // und das ist nur im Indikator-Callback-Kontext sicher aufrufbar.
+            foreach (var eval in _postTradeEvaluator.PopDue(DateTime.UtcNow))
+                SendExitVerdict(eval);
         }
     }
 
@@ -438,26 +441,36 @@ public class TradeRecapIndicator : Indicator
         RedrawChart();
     }
 
-    private async Task CheckPostTradeEvaluationsAsync()
+    /// <summary>
+    /// Baut den Mini-Chart für eine fällige Exit-Auswertung (zeigt Entry, Exit und die
+    /// Kursbewegung seither — BuildMiniChart fenstert immer bis zum aktuellen Bar, deshalb
+    /// reicht der Aufruf, um die 5 Minuten nach dem Exit automatisch mit abzubilden) und
+    /// verschickt ihn zusammen mit dem Bewertungstext per Telegram.
+    /// </summary>
+    private void SendExitVerdict(PendingEvaluation eval)
     {
-        var due = _postTradeEvaluator.PopDue(DateTime.UtcNow);
-        if (due.Count == 0) return;
+        byte[]? chartBytes = BuildMiniChart(eval.Record);
+        string caption = TelegramSender.BuildExitVerdict(eval);
 
         string botToken = _botToken;
-        string chatId   = _chatId;
+        string chatId    = _chatId;
 
-        foreach (var eval in due)
+        _ = Task.Run(async () =>
         {
             try
             {
-                string text = TelegramSender.BuildExitVerdict(eval);
-                await TelegramSender.SendMessageAsync(botToken, chatId, text, _httpClient).ConfigureAwait(false);
+                if (chartBytes != null)
+                    await TelegramSender.SendPhotoAsync(botToken, chatId, chartBytes, caption, _httpClient)
+                        .ConfigureAwait(false);
+                else
+                    await TelegramSender.SendMessageAsync(botToken, chatId, caption, _httpClient)
+                        .ConfigureAwait(false);
             }
             catch (Exception ex)
             {
                 System.Diagnostics.Debug.WriteLine($"[TradeRecap] Exit-Check Fehler: {ex.Message}");
             }
-        }
+        });
     }
 
     protected override void OnRender(RenderContext context, DrawingLayouts layout)
