@@ -179,7 +179,7 @@ public class TradeRecapIndicator : Indicator
     // Sperre würden dann alle Trades des Tages ein zweites Mal an Telegram gehen.
     private readonly HashSet<string> _sentTradeKeys = new();
 
-    private const string CurrentVersion = "260803";
+    private const string CurrentVersion = "260820";
 
     // 0 = unbekannt, 1 = verbunden, 2 = Fehler
     private volatile int _tgStatus;
@@ -239,6 +239,18 @@ public class TradeRecapIndicator : Indicator
     protected override void OnCalculate(int bar, decimal value)
     {
         _dailyStats.ResetIfNewDay();
+
+        // Sicherheitsnetz: Kerzen-High/Low der laufenden Kerze zusätzlich zum
+        // Live-Tick-Stream prüfen (siehe UpdateMAEMFEFromBar in PositionTracker.cs)
+        if (_positionTracker?.IsPositionOpen == true)
+        {
+            try
+            {
+                var candle = GetCandle(bar);
+                _positionTracker.UpdateMAEMFEFromBar(candle.High, candle.Low, candle.Time);
+            }
+            catch { /* Kerze evtl. noch nicht verfügbar */ }
+        }
     }
 
     // Jeder Markt-Tick → live MaxTicks/MinTicks updaten (kein Kerzen-Bezug)

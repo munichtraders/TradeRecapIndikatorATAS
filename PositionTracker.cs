@@ -231,4 +231,19 @@ public class PositionTracker
         if (move < _active.MAE) _active.MAE = move;   // negativer = weiter gegen dich
         if (move > _active.MFE) _active.MFE = move;   // positiver = weiter in deine Richtung
     }
+
+    /// <summary>
+    /// Sicherheitsnetz gegen verpasste Live-Ticks: prüft zusätzlich High/Low der
+    /// aktuell laufenden Kerze gegen den Einstiegspreis. Die Kerzen-Engine der
+    /// Plattform verpasst nie einen Preis, im Gegensatz zum Live-Tick-Stream
+    /// (OnNewTrade), der bei schnellen Bewegungen einzelne Ticks auslassen kann.
+    /// </summary>
+    public void UpdateMAEMFEFromBar(decimal high, decimal low, DateTime barTime)
+    {
+        if (_active == null) return;
+        if (barTime < _active.OpenTime) return;   // Kerze liegt (teilweise) vor dem Entry
+
+        UpdateMAEMFEFromTick(low);
+        UpdateMAEMFEFromTick(high);
+    }
 }

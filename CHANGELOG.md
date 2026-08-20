@@ -4,6 +4,13 @@ Alle Änderungen werden hier dokumentiert. Format: `YYMMDD`.
 
 ---
 
+## [260820] — 2026-08-20
+
+### Fix — Min/Max Ticks verpassten schnelle Kursbewegungen
+- **Problem:** `MAE`/`MFE` ("Min/Max Ticks" auf der Karte) wurden ausschließlich aus dem Live-Tick-Stream berechnet (`OnNewTrade`). Bei schnellen Bewegungen kann dieser Stream einzelne Ticks auslassen — der MiniChart (aus den regulären Kerzendaten) zeigte dann einen deutlich größeren Ausschlag, als die Karte als Min/Max Ticks auswies (in einem beobachteten Fall: ~14 Ticks angezeigt bei tatsächlich ~220 Ticks laut Kerzen-Docht).
+- **Fix:** Neue Methode `PositionTracker.UpdateMAEMFEFromBar(high, low, barTime)` prüft zusätzlich bei jeder Kerzen-Aktualisierung `High`/`Low` der aktuell laufenden Kerze gegen den Einstiegspreis — die Kerzen-Engine der Plattform verpasst nie einen Preis, im Gegensatz zum Tick-Stream. Aufgerufen aus `OnCalculate` über `GetCandle(bar)`.
+- Betrifft `PositionTracker.cs`, `TradeRecapIndicator.cs`.
+
 ## [260803] — 2026-07-31
 
 ### Behoben
