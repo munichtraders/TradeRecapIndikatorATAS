@@ -39,6 +39,70 @@ public static class TelegramSender
         }
     }
 
+    public static async Task SendMessageAsync(
+        string botToken,
+        string chatId,
+        string text,
+        HttpClient client)
+    {
+        if (string.IsNullOrWhiteSpace(botToken) || string.IsNullOrWhiteSpace(chatId))
+            return;
+
+        string url = $"{ApiBase}{botToken}/sendMessage";
+
+        using var content = new FormUrlEncodedContent(new[]
+        {
+            new KeyValuePair<string, string>("chat_id", chatId),
+            new KeyValuePair<string, string>("text", text),
+            new KeyValuePair<string, string>("parse_mode", "HTML"),
+        });
+
+        try
+        {
+            var response = await client.PostAsync(url, content).ConfigureAwait(false);
+            if (!response.IsSuccessStatusCode)
+            {
+                string body = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
+                Console.Error.WriteLine($"[TradeRecap] Telegram sendMessage Fehler {response.StatusCode}: {body}");
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"[TradeRecap] Telegram sendMessage Exception: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// Baut die Exit-Check-Nachricht: bewertet anhand der Kursbewegung in den
+    /// Minuten nach dem Exit, ob der Ausstiegszeitpunkt gut war. Schwelle für eine
+    /// "deutliche" Bewegung ist relativ zur eigenen MAE/MFE-Range des Trades (mit
+    /// Mindest-Ticks als Boden, damit sehr enge Trades nicht sofort ausschlagen).
+    /// </summary>
+    public static string BuildExitVerdict(PendingEvaluation eval)
+    {
+        var record = eval.Record;
+        string dir = record.Direction == PositionDirection.Long ? "LONG" : "SHORT";
+
+        decimal tickSize = record.TickSize > 0 ? record.TickSize : 1m;
+        long favTicks = (long)Math.Round(eval.RunFavorable / tickSize);
+        long advTicks = (long)Math.Round(Math.Abs(eval.RunAdverse) / tickSize);
+
+        decimal range = record.MFE - record.MAE;
+        decimal threshold = Math.Max(range * 0.5m, tickSize * 3m);
+        bool favSignificant = eval.RunFavorable >= threshold;
+        bool advSignificant = Math.Abs(eval.RunAdverse) >= threshold;
+
+        string verdict = (favSignificant, advSignificant) switch
+        {
+            (true, false) => $"🟡 Zu früh raus — Kurs lief danach {favTicks} Ticks weiter in Trade-Richtung",
+            (false, true) => $"🟢 Guter Exit — Kurs drehte danach {advTicks} Ticks gegen die Trade-Richtung",
+            (true, true)  => $"🔵 Volatil danach — {favTicks} Ticks in Trade-Richtung, {advTicks} Ticks dagegen",
+            _             => "⚪ Exit neutral — kaum Bewegung in den 5 Minuten danach",
+        };
+
+        return $"⏱ <b>Exit-Check {record.Symbol} {dir}</b> (Exit {record.CloseTime:HH:mm:ss})\n{verdict}";
+    }
+
     public static string BuildCaption(PositionRecord record, DailyStatsSnapshot stats, string traderName = "")
     {
         bool isProfit = record.PnlUsd >= 0;

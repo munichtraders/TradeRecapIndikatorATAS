@@ -4,6 +4,16 @@ Alle Änderungen werden hier dokumentiert. Format: `YYMMDD`.
 
 ---
 
+## [260821] — 2026-08-20
+
+### Neu — Exit-Check 5 Minuten nach Trade-Close
+- Neue Klasse `PostTradeEvaluator.cs` (plattformunabhängig, wie `CardRenderer.cs`): trackt nach jedem Trade-Close 5 Minuten lang die Kursbewegung ab dem Exit-Preis — sowohl weiter in die ursprüngliche Trade-Richtung (`RunFavorable`, verpasster Gewinn) als auch dagegen (`RunAdverse`, bestätigt den Exit).
+- Speist sich aus denselben Hooks wie das bestehende MAE/MFE-Tracking (`OnNewTrade` für Live-Ticks, `OnCalculate`/`GetCandle` als Kerzen-Sicherheitsnetz), läuft aber unabhängig von der aktuell offenen Position weiter.
+- Neuer 15-Sekunden-Timer (`CheckPostTradeEvaluationsAsync`) prüft auf fällige Auswertungen und verschickt bei Fälligkeit eine eigenständige Telegram-Textnachricht (`TelegramSender.SendMessageAsync` + `BuildExitVerdict`), z. B. "🟡 Zu früh raus — Kurs lief danach 12 Ticks weiter in Trade-Richtung" oder "🟢 Guter Exit — Kurs drehte danach 9 Ticks gegen die Trade-Richtung".
+- Schwelle für eine "deutliche" Bewegung ist relativ zur eigenen MAE/MFE-Range des Trades (50%), mit einem Boden von 3 Ticks, damit sehr enge Trades nicht bei jedem Rauschen ausschlagen.
+- Bekannte Lücke: keine Persistenz über einen Neustart von ATAS — schließt der Indikator zwischen Exit und Fälligkeit neu, geht die ausstehende Auswertung verloren.
+- Betrifft `PostTradeEvaluator.cs` (neu), `TelegramSender.cs`, `TradeRecapIndicator.cs`.
+
 ## [260820] — 2026-08-20
 
 ### Fix — Min/Max Ticks verpassten schnelle Kursbewegungen

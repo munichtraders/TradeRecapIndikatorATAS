@@ -161,6 +161,7 @@ public class TradeRecapIndicator : Indicator
 
     private DailyStats _dailyStats = new();
     private PositionTracker _positionTracker = null!;
+    private readonly PostTradeEvaluator _postTradeEvaluator = new();
     private readonly CsvJournalWriter _csvWriter = new();
     private HttpClient _httpClient = null!;
     private byte[]? _logoBytes;
@@ -179,7 +180,7 @@ public class TradeRecapIndicator : Indicator
     // Sperre würden dann alle Trades des Tages ein zweites Mal an Telegram gehen.
     private readonly HashSet<string> _sentTradeKeys = new();
 
-    private const string CurrentVersion = "260820";
+    private const string CurrentVersion = "260821";
 
     // 0 = unbekannt, 1 = verbunden, 2 = Fehler
     private volatile int _tgStatus;
@@ -231,6 +232,9 @@ public class TradeRecapIndicator : Indicator
         _ = CheckTelegramAsync();
         SubscribeToTimer(TimeSpan.FromSeconds(60), () => _ = CheckTelegramAsync());
 
+        // Alle 15s auf fällige Exit-Checks prüfen (5 Minuten nach Trade-Close)
+        SubscribeToTimer(TimeSpan.FromSeconds(15), () => _ = CheckPostTradeEvaluationsAsync());
+
         _ = CheckVersionAsync();
     }
 
@@ -251,6 +255,19 @@ public class TradeRecapIndicator : Indicator
             }
             catch { /* Kerze evtl. noch nicht verfügbar */ }
         }
+
+        // Offene Exit-Checks laufen unabhängig davon weiter, ob gerade eine neue
+        // Position offen ist — GetCandle(bar).Time ist wie oben UTC-wertig.
+        if (_postTradeEvaluator.HasPending)
+        {
+            try
+            {
+                var candle = GetCandle(bar);
+                var barTimeUtc = DateTime.SpecifyKind(candle.Time, DateTimeKind.Utc);
+                _postTradeEvaluator.UpdateFromBar(candle.High, candle.Low, barTimeUtc);
+            }
+            catch { /* Kerze evtl. noch nicht verfügbar */ }
+        }
     }
 
     // Jeder Markt-Tick → live MaxTicks/MinTicks updaten (kein Kerzen-Bezug)
@@ -258,6 +275,9 @@ public class TradeRecapIndicator : Indicator
     {
         if (_positionTracker?.IsPositionOpen == true)
             _positionTracker.UpdateMAEMFEFromTick(trade.Price);
+
+        if (_postTradeEvaluator.HasPending)
+            _postTradeEvaluator.UpdateFromTick(trade.Price);
     }
 
     // ── Portfolio-Updates (geschlossene PnL aus ATAS-Account) ────────────
@@ -325,6 +345,7 @@ public class TradeRecapIndicator : Indicator
 
         // Snapshots für Background-Thread (immutable)
         var recordSnapshot = record;
+        _postTradeEvaluator.Add(recordSnapshot, TimeSpan.FromMinutes(5));
         int seqAtClose     = Volatile.Read(ref _portfolioUpdateSeq);
         decimal ddLimit    = _dailyDrawdownLimit;
         decimal balance    = _accountBalance;
@@ -415,6 +436,28 @@ public class TradeRecapIndicator : Indicator
         }
         catch { _tgStatus = 2; }
         RedrawChart();
+    }
+
+    private async Task CheckPostTradeEvaluationsAsync()
+    {
+        var due = _postTradeEvaluator.PopDue(DateTime.UtcNow);
+        if (due.Count == 0) return;
+
+        string botToken = _botToken;
+        string chatId   = _chatId;
+
+        foreach (var eval in due)
+        {
+            try
+            {
+                string text = TelegramSender.BuildExitVerdict(eval);
+                await TelegramSender.SendMessageAsync(botToken, chatId, text, _httpClient).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[TradeRecap] Exit-Check Fehler: {ex.Message}");
+            }
+        }
     }
 
     protected override void OnRender(RenderContext context, DrawingLayouts layout)
