@@ -4,6 +4,20 @@ Alle Änderungen werden hier dokumentiert. Format: `YYMMDD`.
 
 ---
 
+## [260826] — 2026-08-26
+
+### Neu — Start-Fragebogen über Telegram (Trader-Auswahl, Zustandscheck, Bias)
+- Beim Start des Indikators schickt der Bot automatisch eine Nachricht mit Inline-Keyboard in den Team-Chat: **1)** Trader bestätigen (Martin/Tobi/Mario, Vorschlag aus den Settings), **2)** Zustandscheck Liste A (Allgemeiner Zustand, 10 Optionen), **3)** Zustandscheck Liste B (Zustand bezüglich Trading, 10 Optionen), **4)** Bias (Long/Neutral/Short) — Katalog 1:1 aus `Munich_Traders_Tradingplan.md`, Abschnitt „Zustandscheck — Detailregeln".
+- Die Nachricht **aktualisiert sich pro Schritt** (Telegram `editMessageText`) statt vier Einzelnachrichten zu verschicken — hält den Chat übersichtlich.
+- Ampel (🟢/🟡/🔴) ergibt sich aus dem schlechteren Wert beider Listen. Bei Gelb/Rot erscheint eine zusätzliche Warnzeile im Status-Panel des Indikators (reine Anzeige, keine automatische Risikosperre).
+- Antworten werden zusätzlich als eigener Eintrag ins lokale CSV-Journal (`..._checkin.csv`, sofern ein CSV-Pfad gesetzt ist) und ins zentrale Server-Journal (neuer `/checkin`-Endpoint) übernommen.
+- Neue Klassen `TelegramUpdatePoller.cs` (kurzes `getUpdates`-Short-Polling, kein Long-Poll) und `SessionCheckinFlow.cs` (State Machine), dazu `TelegramSender.SendMessageWithKeyboardAsync`/`EditMessageWithKeyboardAsync`/`AnswerCallbackQueryAsync`. Polling läuft über einen eigenen 3s-Timer neben dem bestehenden 60s-Telegram-Status-Timer.
+- **Trader-Name ist jetzt eine feste Auswahl** (Martin/Tobi/Mario) statt Freitext — ersetzt das alte `TraderName`-Settings-Feld. Der per Telegram bestätigte Wert hat für die laufende Session Vorrang vor der Settings-Auswahl.
+- Bot Token/Chat ID sind jetzt (wie Server-URL/-Token bereits vorher) als Standardwerte im Code hinterlegt, damit alle drei Nutzer denselben Bot ohne manuelle Einrichtung bekommen.
+- **Bekannte Lücke:** keine Persistenz über einen Neustart hinweg — bricht der Indikator während des Fragebogens neu, beginnt er beim nächsten Start neu (gleiche akzeptierte Lücke wie beim Exit-Check). Der `/checkin`-Server-Endpoint muss serverseitig separat deployed werden (`06_Tools/TradeRecapServer/server.js`), bis dahin schlägt der Server-Teil der Checkin-Speicherung fehl (lokales CSV-Journal ist davon unabhängig).
+
+---
+
 ## [260822] — 2026-08-20
 
 ### Neu — Chart im Exit-Check

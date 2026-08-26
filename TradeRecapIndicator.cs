@@ -24,8 +24,8 @@ public class TradeRecapIndicator : Indicator
 {
     // ── Telegram ──────────────────────────────────────────────────────────
 
-    private string _botToken = "";
-    private string _chatId = "";
+    private string _botToken = "7800685401:AAEnsF6E4dtm-4pUO-yjgiRjDQyHvOkoT64";
+    private string _chatId = "-4946993985";
 
     [Display(Name = "Bot Token", GroupName = "Telegram", Order = 1)]
     public string BotToken
@@ -133,15 +133,19 @@ public class TradeRecapIndicator : Indicator
         }
     }
 
-    private string _traderName = "";
+    private TraderIdentity _traderIdentity = TraderIdentity.Martin;
 
-    [Display(Name = "Trader-Name (z.B. @MunichTraders)", GroupName = "Design", Order = 2,
-        Description = "Wird auf der Recap-Karte angezeigt, damit klar ist von wem der Trade stammt.")]
-    public string TraderName
+    [Display(Name = "Trader-Name", GroupName = "Design", Order = 2,
+        Description = "Default-Trader, falls der Telegram-Sessioncheck (noch) nicht bestätigt wurde.")]
+    public TraderIdentity TraderIdentity
     {
-        get => _traderName;
-        set => _traderName = value;
+        get => _traderIdentity;
+        set => _traderIdentity = value;
     }
+
+    // Vom Telegram-Sessioncheck bestätigter Name für die laufende Session — hat Vorrang
+    // vor der Settings-Auswahl oben, sobald der Fragebogen abgeschlossen ist.
+    private string? _sessionTraderName;
 
     // ── Update ────────────────────────────────────────────────────────────
 
@@ -166,6 +170,13 @@ public class TradeRecapIndicator : Indicator
     private HttpClient _httpClient = null!;
     private byte[]? _logoBytes;
 
+    // Start-Fragebogen (Trader bestätigen, Zustandscheck, Bias) — läuft über den
+    // Telegram-Polling-Timer, siehe PollCheckinUpdatesAsync.
+    private readonly SessionCheckinFlow _checkinFlow = new();
+    private readonly TelegramUpdatePoller _checkinPoller = new();
+    private AmpelColor? _lastDrawnAmpel; // erkennt Ampel-Wechsel, um RedrawChart nur bei Bedarf zu triggern
+    private bool _checkinSaved; // verhindert Mehrfach-Speichern desselben abgeschlossenen Sessionchecks
+
     // Geschlossene PnL aus ATAS-Account (wird via OnPortfolioChanged aktualisiert)
     private decimal _accountClosedPnl = 0m;
     // Zählt jedes OnPortfolioChanged-Update — damit OnPositionClosed erkennen kann,
@@ -180,7 +191,7 @@ public class TradeRecapIndicator : Indicator
     // Sperre würden dann alle Trades des Tages ein zweites Mal an Telegram gehen.
     private readonly HashSet<string> _sentTradeKeys = new();
 
-    private const string CurrentVersion = "260822";
+    private const string CurrentVersion = "260826";
 
     // 0 = unbekannt, 1 = verbunden, 2 = Fehler
     private volatile int _tgStatus;
@@ -233,6 +244,43 @@ public class TradeRecapIndicator : Indicator
         SubscribeToTimer(TimeSpan.FromSeconds(60), () => _ = CheckTelegramAsync());
 
         _ = CheckVersionAsync();
+
+        // Start-Fragebogen anstoßen + alle 3s auf Antworten pollen (reines HTTP, keine
+        // GetCandle/Chart-Zugriffe — anders als BuildMiniChart sicher aus dem Timer-Thread).
+        _ = _checkinFlow.StartAsync(_traderIdentity, _botToken, _chatId, _httpClient);
+        SubscribeToTimer(TimeSpan.FromSeconds(3), () => _ = PollCheckinUpdatesAsync());
+    }
+
+    private async Task PollCheckinUpdatesAsync()
+    {
+        try
+        {
+            var updates = await _checkinPoller.PollAsync(_botToken, _httpClient).ConfigureAwait(false);
+            if (updates.Count > 0)
+                await _checkinFlow.ProcessUpdatesAsync(updates, _botToken, _chatId, _httpClient).ConfigureAwait(false);
+
+            if (_checkinFlow.Result != null)
+            {
+                _sessionTraderName = _checkinFlow.Result.TraderName;
+
+                if (!_checkinSaved)
+                {
+                    _checkinSaved = true;
+                    _csvWriter.AppendCheckin(_checkinFlow.Result);
+                    _ = TradeRecapServerSender.SendCheckinAsync(_serverUrl, _serverToken, _checkinFlow.Result, _httpClient);
+                }
+            }
+
+            if (_checkinFlow.PendingAmpel != _lastDrawnAmpel)
+            {
+                _lastDrawnAmpel = _checkinFlow.PendingAmpel;
+                RedrawChart();
+            }
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"[TradeRecap] Sessioncheck-Polling Fehler: {ex.Message}");
+        }
     }
 
     // ── Bar-Berechnung (MAE/MFE-Tracking) ────────────────────────────────
@@ -355,7 +403,7 @@ public class TradeRecapIndicator : Indicator
         byte[]? logoSnap   = _logoBytes;
         string botToken    = _botToken;
         string chatId      = _chatId;
-        string traderName  = _traderName;
+        string traderName  = _sessionTraderName ?? _traderIdentity.ToString();
         string serverUrl   = _serverUrl;
         string serverToken = _serverToken;
 
@@ -490,12 +538,15 @@ public class TradeRecapIndicator : Indicator
         const int LineH   = 20;
         const int PadX    = 8;
         const int PadY    = 6;
-        bool hasUpdate    = _updateVersion != null || _installStatus > 0;
-        // Breite nur beim langen Anleitungstext erweitern (installStatus==0 = noch nicht gestartet)
-        int  PanelW       = (hasUpdate && _installStatus == 0) ? 480 : 240;
-        // 4 Zeilen nur wenn Anleitungstext sichtbar, sonst 3 (kurze Status-Texte)
-        int  lines        = (hasUpdate && _installStatus == 0) ? 4 : hasUpdate ? 3 : 2;
-        int  PanelH       = LineH * lines + PadY * 2;
+        bool hasUpdate       = _updateVersion != null || _installStatus > 0;
+        bool showInstallHint = hasUpdate && _installStatus == 0;
+        bool hasCheckinWarn  = _checkinFlow.PendingAmpel is AmpelColor.Yellow or AmpelColor.Red;
+
+        int  extraLines  = (hasUpdate ? 1 : 0) + (showInstallHint ? 1 : 0) + (hasCheckinWarn ? 1 : 0);
+        int  lines       = 2 + extraLines;
+        // Breite nur erweitern, wenn ein längerer Text sichtbar ist
+        int  PanelW      = showInstallHint ? 480 : hasCheckinWarn ? 320 : 240;
+        int  PanelH      = LineH * lines + PadY * 2;
 
         var clip = context.ClipBounds;
         if (clip.Width < 100) return;   // kein sinnvoller Render-Bereich
@@ -518,7 +569,9 @@ public class TradeRecapIndicator : Indicator
             case 2:  tgText = "TG  ERR  Token/ID prüfen";      tgColor = _colorRed;    break;
             default: tgText = "TG  ...  Prüfe Verbindung";     tgColor = _colorYellow; break;
         }
-        context.DrawString(tgText, _statusFont, tgColor, panX + PadX, panY + PadY);
+        int y = panY + PadY;
+        context.DrawString(tgText, _statusFont, tgColor, panX + PadX, y);
+        y += LineH;
 
         // Zeile 2 — Trade-Status
         var active = _positionTracker?.ActiveRecord;
@@ -535,7 +588,19 @@ public class TradeRecapIndicator : Indicator
             tradeText  = "Kein Trade offen";
             tradeColor = _colorMuted;
         }
-        context.DrawString(tradeText, _statusFont, tradeColor, panX + PadX, panY + PadY + LineH);
+        context.DrawString(tradeText, _statusFont, tradeColor, panX + PadX, y);
+        y += LineH;
+
+        // Zeile 3 (optional) — Sessioncheck-Warnung bei Gelb/Rot
+        if (hasCheckinWarn)
+        {
+            bool isRed = _checkinFlow.PendingAmpel == AmpelColor.Red;
+            string checkinText = isRed
+                ? "Kein Trading heute (Zustandscheck)"
+                : "Risiko halbieren (Zustandscheck)";
+            context.DrawString(checkinText, _statusFont, isRed ? _colorRed : _colorYellow, panX + PadX, y);
+            y += LineH;
+        }
 
         if (hasUpdate)
         {
@@ -552,13 +617,13 @@ public class TradeRecapIndicator : Indicator
                 3 => _colorRed,
                 _ => _colorYellow
             };
-            int textY = panY + PadY + LineH * 2;
-            context.DrawString(updateLine1, _statusFont, updateColor, panX + PadX, textY);
+            context.DrawString(updateLine1, _statusFont, updateColor, panX + PadX, y);
+            y += LineH;
 
-            if (_installStatus == 0)
+            if (showInstallHint)
                 context.DrawString(
                     "Indikatoren - Einst. TradeRecap (Telegram) - Haken bei installieren",
-                    _statusFont, _colorMuted, panX + PadX, textY + LineH);
+                    _statusFont, _colorMuted, panX + PadX, y);
         }
     }
 

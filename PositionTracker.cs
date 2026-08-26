@@ -6,6 +6,9 @@ namespace MunichTraders.TradeRecap;
 // Eigenes Enum — vermeidet Namenskonflikt mit ATAS.DataFeedsCore.TradeDirection
 public enum PositionDirection { Long, Short }
 
+// Fester Trader-Roster — nur diese drei nutzen den Indikator (Martin/Mario auf ATAS, Tobi auf Quantower).
+public enum TraderIdentity { Martin, Tobi, Mario }
+
 public record FillInfo(decimal Price, int Qty, DateTime Time);
 
 public class PositionRecord
