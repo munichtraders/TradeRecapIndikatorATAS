@@ -138,14 +138,14 @@ public class TradeRecapIndicator : Indicator
     private TraderIdentity _traderIdentity = TraderIdentity.Martin;
 
     [Display(Name = "Trader-Name", GroupName = "Design", Order = 2,
-        Description = "Default-Trader, falls der Telegram-Sessioncheck (noch) nicht bestätigt wurde.")]
+        Description = "Default-Trader, falls der Sessioncheck im Panel (noch) nicht bestätigt wurde.")]
     public TraderIdentity TraderIdentity
     {
         get => _traderIdentity;
         set => _traderIdentity = value;
     }
 
-    // Vom Telegram-Sessioncheck bestätigter Name für die laufende Session — hat Vorrang
+    // Vom Sessioncheck im Panel bestätigter Name für die laufende Session — hat Vorrang
     // vor der Settings-Auswahl oben, sobald der Fragebogen abgeschlossen ist.
     private string? _sessionTraderName;
 
@@ -191,18 +191,22 @@ public class TradeRecapIndicator : Indicator
     private HttpClient _httpClient = null!;
     private byte[]? _logoBytes;
 
-    // Start-Fragebogen (Trader bestätigen, Zustandscheck, Bias) — läuft über den
-    // Telegram-Polling-Timer, siehe PollCheckinUpdatesAsync. Läuft nur in der Instanz, die
-    // den Flow über CheckinGate beansprucht hat (siehe OnInitialize) — andere Instanzen
-    // übernehmen das Ergebnis passiv aus dem Gate.
-    private readonly SessionCheckinFlow _checkinFlow = new();
-    private readonly TelegramUpdatePoller _checkinPoller = new();
+    // Start-Fragebogen (Trader bestätigen, Zustandscheck, Bias) — wird direkt im Panel per
+    // Mausklick ausgefüllt (siehe PanelCheckinFlow, DrawStatusPanel, ProcessMouseDown). Läuft
+    // nur in der Instanz, die den Flow über CheckinGate beansprucht hat (siehe OnInitialize) —
+    // andere Instanzen übernehmen das Ergebnis passiv aus dem Gate.
+    private readonly PanelCheckinFlow _panelCheckin = new();
     private bool _ownsCheckinFlow;
-    private bool _checkinSaved; // verhindert Mehrfach-Speichern desselben abgeschlossenen Sessionchecks
+    // True sobald diese Instanz beim Start feststellt, dass ein neuer Sessioncheck fällig ist.
+    // Zeigt den Fällig-Hinweis im Panel, bis der Trader ihn ausfüllt oder wegklickt.
+    private bool _checkinDue;
+    // Trader hat den Fällig-Hinweis (oder den laufenden Fragebogen) weggeklickt — Panel zeigt
+    // für den Rest dieser Chart-Session keinen Checkin-Hinweis mehr. Gate bleibt offen, ein
+    // Neuladen fragt also erneut.
+    private bool _checkinPromptDismissed;
     // Aktuell gültige Ampel-Warnung fürs Panel — unabhängig davon, ob sie aus dem eigenen
     // Fragebogen, dem Cache (CheckinGate) oder einer anderen Instanz stammt.
     private AmpelColor? _activeAmpel;
-    private AmpelColor? _lastDrawnAmpel; // erkennt Ampel-Wechsel, um RedrawChart nur bei Bedarf zu triggern
 
     // Verhindert doppelte Trade-Verarbeitung, wenn derselbe Markt in mehreren Charts
     // gleichzeitig offen ist (siehe MarketOwnerGate). Nur die Owner-Instanz verarbeitet Fills.
@@ -224,7 +228,7 @@ public class TradeRecapIndicator : Indicator
     // Sperre würden dann alle Trades des Tages ein zweites Mal an Telegram gehen.
     private readonly HashSet<string> _sentTradeKeys = new();
 
-    private const string CurrentVersion = "260917";
+    private const string CurrentVersion = "260918";
 
     // 0 = unbekannt, 1 = verbunden, 2 = Fehler
     private volatile int _tgStatus;
@@ -263,6 +267,13 @@ public class TradeRecapIndicator : Indicator
     private bool  _isDraggingPanel;
     private Point _dragMouseStart;
     private Point _dragPanelStart;
+
+    // Geometrie der Checkin-Bedienelemente im Panel — pro Frame in DrawStatusPanel neu
+    // befüllt, in ProcessMouseDown für die Hit-Tests gelesen.
+    private Rectangle _lastCheckinStartRect;
+    private Rectangle _lastCheckinLaterRect;
+    private Rectangle _lastCheckinCancelRect;
+    private readonly List<Rectangle> _lastCheckinOptionRects = new();
 
     // ── Konstruktor ───────────────────────────────────────────────────────
 
@@ -303,66 +314,61 @@ public class TradeRecapIndicator : Indicator
 
         _ = CheckVersionAsync();
 
-        // Start-Fragebogen nur anstoßen, wenn CheckinGate diese Instanz als Fragesteller
-        // beansprucht (kein aktuelles Ergebnis vorhanden, keine andere Instanz fragt gerade).
-        // Sonst läuft nur das 3s-Polling weiter, das ein Ergebnis aus dem Gate übernimmt.
+        // Nur die Instanz, die CheckinGate als Fragesteller beansprucht (kein aktuelles
+        // Ergebnis vorhanden, keine andere Instanz fragt gerade), zeigt den Fällig-Hinweis im
+        // Panel. Andere Instanzen übernehmen ein Ergebnis passiv über das 3s-Polling unten.
         _ownsCheckinFlow = CheckinGate.TryClaimFlow(out var cachedCheckin);
         if (_ownsCheckinFlow)
         {
-            _ = _checkinFlow.StartAsync(_traderIdentity, _botToken, _chatId, _httpClient);
+            _checkinDue = true;
         }
         else if (cachedCheckin != null)
         {
             _sessionTraderName = cachedCheckin.TraderName;
             _activeAmpel = cachedCheckin.Ampel is AmpelColor.Yellow or AmpelColor.Red ? cachedCheckin.Ampel : null;
         }
-        SubscribeToTimer(TimeSpan.FromSeconds(3), () => _ = PollCheckinUpdatesAsync());
+        SubscribeToTimer(TimeSpan.FromSeconds(3), PollCheckinCache);
     }
 
-    private async Task PollCheckinUpdatesAsync()
+    /// <summary>
+    /// Rein lokal (keine Telegram-Calls mehr nötig, der Fragebogen läuft im Panel) — prüft nur,
+    /// ob eine andere Instanz (anderer Chart, gleicher ATAS-Prozess) den Sessioncheck inzwischen
+    /// fertig ausgefüllt hat, damit diese Instanz das Ergebnis für ihre Ampel-Warnung übernimmt.
+    /// </summary>
+    private void PollCheckinCache()
     {
+        if (_ownsCheckinFlow || _sessionTraderName != null) return;
         try
         {
-            if (_ownsCheckinFlow)
+            if (CheckinGate.TryGetValid(out var record) && record != null)
             {
-                var updates = await _checkinPoller.PollAsync(_botToken, _httpClient).ConfigureAwait(false);
-                if (updates.Count > 0)
-                    await _checkinFlow.ProcessUpdatesAsync(updates, _botToken, _chatId, _httpClient).ConfigureAwait(false);
-
-                if (_checkinFlow.Result != null && !_checkinSaved)
-                {
-                    _checkinSaved = true;
-                    _sessionTraderName = _checkinFlow.Result.TraderName;
-                    CheckinGate.Save(_checkinFlow.Result);
-                    _csvWriter.AppendCheckin(_checkinFlow.Result);
-                    _ = TradeRecapServerSender.SendCheckinAsync(_serverUrl, _serverToken, _checkinFlow.Result, _httpClient);
-                }
-
-                var pending = _checkinFlow.PendingAmpel is AmpelColor.Yellow or AmpelColor.Red
-                    ? _checkinFlow.PendingAmpel : null;
-                if (pending != _lastDrawnAmpel)
-                {
-                    _lastDrawnAmpel = pending;
-                    _activeAmpel    = pending;
-                    RedrawChart();
-                }
-            }
-            else if (_sessionTraderName == null)
-            {
-                // Eigenes Ergebnis noch nicht übernommen — regelmäßig prüfen, ob die
-                // fragestellende Instanz (gleicher ATAS-Prozess) inzwischen fertig ist.
-                if (CheckinGate.TryGetValid(out var record) && record != null)
-                {
-                    _sessionTraderName = record.TraderName;
-                    _activeAmpel = record.Ampel is AmpelColor.Yellow or AmpelColor.Red ? record.Ampel : null;
-                    RedrawChart();
-                }
+                _sessionTraderName = record.TraderName;
+                _activeAmpel = record.Ampel is AmpelColor.Yellow or AmpelColor.Red ? record.Ampel : null;
+                RedrawChart();
             }
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"[TradeRecap] Sessioncheck-Polling Fehler: {ex.Message}");
+            System.Diagnostics.Debug.WriteLine($"[TradeRecap] Sessioncheck-Cache-Poll Fehler: {ex.Message}");
         }
+    }
+
+    /// <summary>
+    /// Wird aufgerufen, sobald der Trader im Panel die letzte Frage (Bias) beantwortet hat.
+    /// Speichert das Ergebnis, hängt es ans CSV-/Server-Journal an und schickt EINE Telegram-
+    /// Nachricht mit der fertigen Antwort (kein Hin-und-Her mehr über Telegram).
+    /// </summary>
+    private void FinalizePanelCheckin(CheckinRecord result)
+    {
+        _sessionTraderName = result.TraderName;
+        _activeAmpel = result.Ampel is AmpelColor.Yellow or AmpelColor.Red ? result.Ampel : null;
+        CheckinGate.Save(result);
+        _csvWriter.AppendCheckin(result);
+        _ = TradeRecapServerSender.SendCheckinAsync(_serverUrl, _serverToken, result, _httpClient);
+        _ = TelegramSender.SendMessageAsync(_botToken, _chatId, PanelCheckinFlow.BuildAnswerSummary(result), _httpClient);
+
+        _panelCheckin.Reset();
+        _checkinDue = false;
     }
 
     // ── Bar-Berechnung (MAE/MFE-Tracking) ────────────────────────────────
@@ -618,6 +624,13 @@ public class TradeRecapIndicator : Indicator
 
     private readonly record struct StatusRow(Color Dot, string Text, Color TextColor);
 
+    private const int PanelPadX     = 10;
+    private const int PanelRowH     = 20;
+    private const int PanelHeaderH  = 34;
+    private const int PanelAccentH  = 3;
+    private const int PanelAvatarSz = 24;
+    private const int PanelRadius   = 10;
+
     private void DrawStatusPanel(RenderContext context)
     {
         _statusFont ??= new RenderFont("Calibri", 10);
@@ -633,13 +646,25 @@ public class TradeRecapIndicator : Indicator
         var clip = context.ClipBounds;
         if (clip.Width < 100) return;   // kein sinnvoller Render-Bereich
 
-        const int PadX      = 10;
-        const int RowH      = 20;
-        const int HeaderH   = 34;
-        const int AccentH   = 3;
-        const int AvatarSz  = 24;
-        const int Radius    = 10;
+        _lastCheckinStartRect  = Rectangle.Empty;
+        _lastCheckinLaterRect  = Rectangle.Empty;
+        _lastCheckinCancelRect = Rectangle.Empty;
+        _lastCheckinOptionRects.Clear();
+        _lastChevronRect = Rectangle.Empty;
 
+        bool showDuePrompt = _ownsCheckinFlow && _checkinDue && !_checkinPromptDismissed
+            && _panelCheckin.Step == CheckinStep.NotStarted;
+        bool showWizard = _ownsCheckinFlow && _checkinDue && !_checkinPromptDismissed
+            && _panelCheckin.Step != CheckinStep.NotStarted && _panelCheckin.Step != CheckinStep.Completed;
+
+        if (showWizard)
+            DrawCheckinWizard(context, clip);
+        else
+            DrawNormalPanel(context, clip, showDuePrompt);
+    }
+
+    private void DrawNormalPanel(RenderContext context, Rectangle clip, bool showDuePrompt)
+    {
         // ── Zeilen zusammenstellen ───────────────────────────────────────
         var rows = new List<StatusRow>();
 
@@ -700,74 +725,174 @@ public class TradeRecapIndicator : Indicator
         // ── Geometrie ────────────────────────────────────────────────────
         int maxTextLen = rows.Count == 0 ? 0 : rows.Max(r => r.Text.Length);
         int panelW = Math.Clamp(maxTextLen * 7 + 60, 230, 460);
-        int bodyH  = _panelCollapsed ? 0 : rows.Count * RowH + 8;
+        int promptH = showDuePrompt ? PanelRowH + 28 : 0;
+        int bodyH  = _panelCollapsed ? 0 : rows.Count * PanelRowH + 8 + promptH;
         int footerH = _panelCollapsed ? 0 : 16;
-        int panelH  = HeaderH + bodyH + footerH;
+        int panelH  = PanelHeaderH + bodyH + footerH;
 
+        var (panX, panY) = ComputePanelPosition(clip, panelW, panelH);
+        _lastPanelRect  = new Rectangle(panX, panY, panelW, panelH);
+        _lastHeaderRect = new Rectangle(panX, panY, panelW, PanelHeaderH);
+
+        DrawPanelChrome(context, panX, panY, panelW, panelH, showChevron: true);
+
+        if (_panelCollapsed) return;
+
+        context.DrawLine(new RenderPen(_colorBorder), panX + PanelPadX, panY + PanelHeaderH, panX + panelW - PanelPadX, panY + PanelHeaderH);
+
+        // ── Statuszeilen ─────────────────────────────────────────────────
+        int y = panY + PanelHeaderH + 6;
+        foreach (var row in rows)
+        {
+            var dotRect = new Rectangle(panX + PanelPadX, y + 6, 7, 7);
+            context.FillEllipse(row.Dot, dotRect);
+            context.DrawString(row.Text, _statusFont!, row.TextColor, panX + PanelPadX + 14, y);
+            y += PanelRowH;
+        }
+
+        // ── Sessioncheck fällig? ─────────────────────────────────────────
+        if (showDuePrompt)
+        {
+            context.DrawString("Sessioncheck fällig", _statusFont!, _colorGold, panX + PanelPadX, y);
+            y += PanelRowH;
+
+            const int btnW = 74, btnH = 20, gap = 8;
+            _lastCheckinStartRect = new Rectangle(panX + PanelPadX, y, btnW, btnH);
+            _lastCheckinLaterRect = new Rectangle(panX + PanelPadX + btnW + gap, y, btnW, btnH);
+            DrawPillButton(context, _lastCheckinStartRect, "Start", _colorGold, filled: true);
+            DrawPillButton(context, _lastCheckinLaterRect, "Später", _colorTextMuted, filled: false);
+            y += btnH + 8;
+        }
+
+        // ── Footer ───────────────────────────────────────────────────────
+        context.DrawLine(new RenderPen(_colorBorder), panX + PanelPadX, y, panX + panelW - PanelPadX, y);
+        context.DrawString($"Munich Traders  ·  v{CurrentVersion}", _smallFont!, _colorTextMuted, panX + PanelPadX, y + 3);
+    }
+
+    private void DrawCheckinWizard(RenderContext context, Rectangle clip)
+    {
+        var (question, options) = _panelCheckin.Step switch
+        {
+            CheckinStep.AwaitingTrader  => ("Wer bist du?",
+                PanelCheckinFlow.Traders.Select(t => (_colorGold, t)).ToArray()),
+            CheckinStep.AwaitingStateA  => ("Allgemeiner Zustand?",
+                PanelCheckinFlow.StateListA.Select(s => (AmpelDotColor(s.Ampel), s.Label)).ToArray()),
+            CheckinStep.AwaitingStateB  => ("Zustand bezüglich Trading?",
+                PanelCheckinFlow.StateListB.Select(s => (AmpelDotColor(s.Ampel), s.Label)).ToArray()),
+            CheckinStep.AwaitingBias    => ("Bias für heute?",
+                PanelCheckinFlow.BiasOptions.Select(b => (_colorGold, b)).ToArray()),
+            _ => ("", Array.Empty<(Color, string)>()),
+        };
+        int stepIndex = _panelCheckin.Step switch
+        {
+            CheckinStep.AwaitingTrader => 1, CheckinStep.AwaitingStateA => 2,
+            CheckinStep.AwaitingStateB => 3, CheckinStep.AwaitingBias   => 4, _ => 0,
+        };
+
+        int maxTextLen = Math.Max(question.Length, options.Length == 0 ? 0 : options.Max(o => o.Item2.Length));
+        int panelW = Math.Clamp(maxTextLen * 6 + 56, 260, 520);
+        int bodyH  = PanelRowH /* Frage */ + options.Length * PanelRowH + PanelRowH /* Abbrechen */ + 10;
+        int panelH = PanelHeaderH + bodyH;
+
+        var (panX, panY) = ComputePanelPosition(clip, panelW, panelH);
+        _lastPanelRect  = new Rectangle(panX, panY, panelW, panelH);
+        _lastHeaderRect = new Rectangle(panX, panY, panelW, PanelHeaderH);
+
+        DrawPanelChrome(context, panX, panY, panelW, panelH, showChevron: false,
+            subtitleOverride: $"Sessioncheck · Schritt {stepIndex}/4");
+
+        context.DrawLine(new RenderPen(_colorBorder), panX + PanelPadX, panY + PanelHeaderH, panX + panelW - PanelPadX, panY + PanelHeaderH);
+
+        int y = panY + PanelHeaderH + 6;
+        context.DrawString(question, _statusFont!, _colorTextPrime, panX + PanelPadX, y);
+        y += PanelRowH + 2;
+
+        foreach (var (dot, label) in options)
+        {
+            var rowRect = new Rectangle(panX + PanelPadX, y, panelW - 2 * PanelPadX, PanelRowH - 2);
+            _lastCheckinOptionRects.Add(rowRect);
+            context.FillRectangle(_colorAvatarBg, rowRect, 5);
+            context.FillEllipse(dot, new Rectangle(rowRect.X + 6, rowRect.Y + 6, 7, 7));
+            context.DrawString(label, _statusFont!, _colorTextPrime, rowRect.X + 18, rowRect.Y + 1);
+            y += PanelRowH;
+        }
+
+        y += 4;
+        _lastCheckinCancelRect = new Rectangle(panX + PanelPadX, y, 90, 18);
+        DrawPillButton(context, _lastCheckinCancelRect, "Abbrechen", _colorTextMuted, filled: false);
+    }
+
+    private static Color AmpelDotColor(AmpelColor a) => a switch
+    {
+        AmpelColor.Green  => _colorGreen,
+        AmpelColor.Yellow => _colorYellow,
+        AmpelColor.Red    => _colorRed,
+        _ => _colorMuted,
+    };
+
+    private void DrawPanelChrome(RenderContext context, int panX, int panY, int panelW, int panelH, bool showChevron, string? subtitleOverride = null)
+    {
+        context.FillRectangle(_colorBorder, new Rectangle(panX - 1, panY - 1, panelW + 2, panelH + 2), PanelRadius + 1);
+        context.FillRectangle(_colorCardBg, new Rectangle(panX, panY, panelW, panelH), PanelRadius);
+        context.FillRectangle(_colorGold,   new Rectangle(panX, panY, panelW, PanelAccentH), PanelRadius);
+
+        var avatarRect = new Rectangle(panX + PanelPadX, panY + PanelAccentH + (PanelHeaderH - PanelAccentH - PanelAvatarSz) / 2, PanelAvatarSz, PanelAvatarSz);
+        context.FillRectangle(_colorAvatarBg, avatarRect, PanelAvatarSz / 2);
+        if (_logoImage != null)
+        {
+            const int inset = 4;
+            context.DrawStaticImage(_logoImage, new Rectangle(avatarRect.X + inset, avatarRect.Y + inset, PanelAvatarSz - 2 * inset, PanelAvatarSz - 2 * inset));
+        }
+        else
+        {
+            var centered = new RenderStringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center };
+            context.DrawString("MT", _avatarFont!, _colorGold, avatarRect, centered);
+        }
+
+        int textX = avatarRect.Right + 8;
+        context.DrawString("Munich Traders", _titleFont!, _colorTextPrime, textX, panY + PanelAccentH + 3);
+        string subtitle = subtitleOverride ?? (string.IsNullOrEmpty(_symbol)
+            ? "Trade Recap"
+            : $"{_symbol} · {(_isMarketOwner ? "aktiv" : "passiv")}");
+        context.DrawString(subtitle, _smallFont!, _colorTextMuted, textX, panY + PanelAccentH + 18);
+
+        if (!showChevron) return;
+
+        int chevCx = panX + panelW - PanelPadX - 6;
+        int chevCy = panY + PanelHeaderH / 2;
+        _lastChevronRect = new Rectangle(chevCx - 10, chevCy - 10, 20, 20);
+        Point[] tri = _panelCollapsed
+            ? new[] { new Point(chevCx - 3, chevCy - 5), new Point(chevCx - 3, chevCy + 5), new Point(chevCx + 4, chevCy) }
+            : new[] { new Point(chevCx - 5, chevCy - 3), new Point(chevCx + 5, chevCy - 3), new Point(chevCx, chevCy + 4) };
+        context.FillPolygon(_colorTextMuted, tri);
+    }
+
+    private void DrawPillButton(RenderContext context, Rectangle rect, string text, Color accent, bool filled)
+    {
+        if (filled)
+        {
+            context.FillRectangle(accent, rect, rect.Height / 2);
+            context.DrawString(text, _statusFont!, Color.FromArgb(255, 20, 18, 15),
+                rect, new RenderStringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center });
+        }
+        else
+        {
+            context.FillRectangle(_colorAvatarBg, rect, rect.Height / 2);
+            context.DrawString(text, _statusFont!, accent, rect,
+                new RenderStringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center });
+        }
+    }
+
+    private (int panX, int panY) ComputePanelPosition(Rectangle clip, int panelW, int panelH)
+    {
         int defaultX = clip.Right - panelW - 12;
         int defaultY = clip.Top   + 12;
         int panX = _panelX == int.MinValue ? defaultX : _panelX;
         int panY = _panelY == int.MinValue ? defaultY : _panelY;
         // innerhalb des sichtbaren Chart-Bereichs halten, auch nach einem Resize
         panX = Math.Max(clip.Left, Math.Min(panX, clip.Right  - 60));
-        panY = Math.Max(clip.Top,  Math.Min(panY, clip.Bottom - HeaderH));
-
-        _lastPanelRect  = new Rectangle(panX, panY, panelW, panelH);
-        _lastHeaderRect = new Rectangle(panX, panY, panelW, HeaderH);
-
-        // ── Karte ────────────────────────────────────────────────────────
-        context.FillRectangle(_colorBorder, new Rectangle(panX - 1, panY - 1, panelW + 2, panelH + 2), Radius + 1);
-        context.FillRectangle(_colorCardBg, _lastPanelRect, Radius);
-        context.FillRectangle(_colorGold,   new Rectangle(panX, panY, panelW, AccentH), Radius);
-
-        // Avatar-Badge (Logo, sonst "MT"-Monogramm)
-        var avatarRect = new Rectangle(panX + PadX, panY + AccentH + (HeaderH - AccentH - AvatarSz) / 2, AvatarSz, AvatarSz);
-        context.FillRectangle(_colorAvatarBg, avatarRect, AvatarSz / 2);
-        if (_logoImage != null)
-        {
-            const int inset = 4;
-            context.DrawStaticImage(_logoImage, new Rectangle(avatarRect.X + inset, avatarRect.Y + inset, AvatarSz - 2 * inset, AvatarSz - 2 * inset));
-        }
-        else
-        {
-            var centered = new RenderStringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center };
-            context.DrawString("MT", _avatarFont, _colorGold, avatarRect, centered);
-        }
-
-        // Titel + Untertitel (Symbol + Aktiv-/Passiv-Status)
-        int textX = avatarRect.Right + 8;
-        context.DrawString("Munich Traders", _titleFont, _colorTextPrime, textX, panY + AccentH + 3);
-        string subtitle = string.IsNullOrEmpty(_symbol)
-            ? "Trade Recap"
-            : $"{_symbol} · {(_isMarketOwner ? "aktiv" : "passiv")}";
-        context.DrawString(subtitle, _smallFont, _colorTextMuted, textX, panY + AccentH + 18);
-
-        // Einklapp-Pfeil oben rechts
-        int chevCx = panX + panelW - PadX - 6;
-        int chevCy = panY + HeaderH / 2;
-        _lastChevronRect = new Rectangle(chevCx - 10, chevCy - 10, 20, 20);
-        Point[] tri = _panelCollapsed
-            ? new[] { new Point(chevCx - 3, chevCy - 5), new Point(chevCx - 3, chevCy + 5), new Point(chevCx + 4, chevCy) }
-            : new[] { new Point(chevCx - 5, chevCy - 3), new Point(chevCx + 5, chevCy - 3), new Point(chevCx, chevCy + 4) };
-        context.FillPolygon(_colorTextMuted, tri);
-
-        if (_panelCollapsed) return;
-
-        context.DrawLine(new RenderPen(_colorBorder), panX + PadX, panY + HeaderH, panX + panelW - PadX, panY + HeaderH);
-
-        // ── Statuszeilen ─────────────────────────────────────────────────
-        int y = panY + HeaderH + 6;
-        foreach (var row in rows)
-        {
-            var dotRect = new Rectangle(panX + PadX, y + 6, 7, 7);
-            context.FillEllipse(row.Dot, dotRect);
-            context.DrawString(row.Text, _statusFont, row.TextColor, panX + PadX + 14, y);
-            y += RowH;
-        }
-
-        // ── Footer ───────────────────────────────────────────────────────
-        context.DrawLine(new RenderPen(_colorBorder), panX + PadX, y, panX + panelW - PadX, y);
-        context.DrawString($"Munich Traders  ·  v{CurrentVersion}", _smallFont, _colorTextMuted, panX + PadX, y + 3);
+        panY = Math.Max(clip.Top,  Math.Min(panY, clip.Bottom - PanelHeaderH));
+        return (panX, panY);
     }
 
     private static System.Drawing.Image? TryLoadLogoImage(byte[]? bytes)
@@ -781,6 +906,42 @@ public class TradeRecapIndicator : Indicator
 
     public override bool ProcessMouseDown(RenderControlMouseEventArgs e)
     {
+        if (_lastCheckinStartRect.Contains(e.Location))
+        {
+            _panelCheckin.Start();
+            RedrawChart();
+            return true;
+        }
+        if (_lastCheckinLaterRect.Contains(e.Location))
+        {
+            _checkinPromptDismissed = true;
+            RedrawChart();
+            return true;
+        }
+        if (_lastCheckinCancelRect.Contains(e.Location))
+        {
+            _panelCheckin.Reset();
+            _checkinPromptDismissed = true;
+            RedrawChart();
+            return true;
+        }
+        for (int i = 0; i < _lastCheckinOptionRects.Count; i++)
+        {
+            if (!_lastCheckinOptionRects[i].Contains(e.Location)) continue;
+
+            switch (_panelCheckin.Step)
+            {
+                case CheckinStep.AwaitingTrader: _panelCheckin.ChooseTrader(i); break;
+                case CheckinStep.AwaitingStateA: _panelCheckin.ChooseStateA(i); break;
+                case CheckinStep.AwaitingStateB: _panelCheckin.ChooseStateB(i); break;
+                case CheckinStep.AwaitingBias:   _panelCheckin.ChooseBias(i);   break;
+            }
+            if (_panelCheckin.Result != null)
+                FinalizePanelCheckin(_panelCheckin.Result);
+
+            RedrawChart();
+            return true;
+        }
         if (_lastChevronRect.Contains(e.Location))
         {
             _panelCollapsed = !_panelCollapsed;

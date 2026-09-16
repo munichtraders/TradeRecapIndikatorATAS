@@ -4,7 +4,7 @@ using System.Text.Json;
 namespace MunichTraders.TradeRecap;
 
 /// <summary>
-/// Sorgt dafür, dass der Telegram-Start-Fragebogen (SessionCheckinFlow) nicht bei jedem
+/// Sorgt dafür, dass der Start-Fragebogen (PanelCheckinFlow) nicht bei jedem
 /// Chart-Neuladen erneut losläuft: Ergebnis wird prozessweit + auf Disk zwischengespeichert
 /// und gilt als aktuell, solange derselbe Tag UND weniger als 4 Stunden seit der Abfrage
 /// vergangen sind (deckt Vormittags-/Nachmittagssession ab). Zusätzlich verhindert ein
