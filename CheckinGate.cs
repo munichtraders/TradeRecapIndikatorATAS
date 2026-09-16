@@ -16,9 +16,11 @@ internal static class CheckinGate
     private static readonly TimeSpan ReaskInterval = TimeSpan.FromHours(4);
     private static readonly object Lock = new();
 
+    // Bewusst plattformneutraler Pfad (nicht "ATAS\Indicators") — falls beide Plattformen auf
+    // derselben Maschine laufen, teilen sie sich denselben Tages-Sessioncheck.
     private static readonly string StatePath = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-        "ATAS", "Indicators", "TradeRecap_checkin_state.json");
+        "MunichTraders", "TradeRecap_checkin_state.json");
 
     private static bool _flowOwnerClaimed;
 
